@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If this results browser supports your work, please cite the software and the underlying analysis package."
+title: "Salsbury MD Analysis Interactive"
+type: software
+version: 0.1.1
+date-released: 2026-08-25
+authors:
+  - family-names: Salsbury
+    given-names: Freddie R., Jr.
+repository-code: "https://github.com/salsburygroup/salsbury-md-analysis-interactive"
+license: BSD-3-Clause
+

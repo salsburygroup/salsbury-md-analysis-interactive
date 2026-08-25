@@ -1,0 +1,6 @@
+include LICENSE README.md CHANGELOG.md CITATION.cff DEPENDENCIES_AND_LICENSES.md
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include validation *.json
+global-exclude __pycache__ *.py[cod] .DS_Store
+

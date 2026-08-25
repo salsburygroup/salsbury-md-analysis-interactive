@@ -7,4 +7,5 @@
 - Render FES, clustering, RMSF, DCCM, resource, sampling, and provenance views.
 - Embed bounded representative PDB structures without network dependencies.
 - Validate the companion package against the 1,000-frame NEMO zinc-finger fixture.
-
+- Document the GitHub installation and the separate analysis and report commands.
+- Add a NEMO walkthrough that includes the reviewed `mkdssp` environment.

@@ -1,9 +1,34 @@
 # Interactive result browser
 
 Version 0.1.1 is an optional, offline front end for completed
-`salsbury-md-analysis` campaigns. It is a presentation layer over the existing
-JSON, CSV, structures, and figures. Those source artifacts remain the
-scientific record.
+`salsbury-md-analysis` campaigns. It reads the existing JSON, CSV, structures,
+and figures. Those source artifacts remain the scientific record.
+
+## Installation and run order
+
+The packages are currently distributed from GitHub. Install both in one pip
+command:
+
+```bash
+python -m pip install \
+  "salsbury-md-analysis @ git+https://github.com/salsburygroup/salsbury-md-analysis.git@main" \
+  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@main"
+```
+
+The interactive package declares `salsbury-md-analysis>=0.1.1,<0.2` as a
+dependency, but that core package is not on PyPI. Supplying both GitHub
+requirements lets pip resolve the dependency without two source checkouts.
+
+The commands remain separate after installation. The core command reads the
+topology and trajectories and produces the scientific reports. The interactive
+command reads a completed analysis directory and writes the HTML browser. It
+will not launch the core workflow for you.
+
+For protein secondary-structure analysis, install the external `mkdssp`
+executable before preparing the core campaign. Pip cannot supply that binary.
+The full Conda environment in the core repository installs the reviewed
+conda-forge `dssp` package. If `mkdssp` is absent, the core initializer records
+`secondary_structure` as deferred and the viewer reports that omission.
 
 ## What is generated
 
@@ -37,12 +62,12 @@ The browser presents:
 
 ## Molecular viewer boundary
 
-The built-in viewer is deliberately dependency-free. It reads PDB atom records,
+The built-in viewer reads PDB atom records with project-owned JavaScript. It
 supports rotation and zoom, filters atoms, colors by element, chain, or B-factor,
-and highlights atom/residue text matches. Its CA/P trace lines are visual guides,
-not inferred chemical bonds. Download the linked PDB and use VMD, ChimeraX, or
-another full molecular package when bond topology, surfaces, measurements, or
-publication rendering are needed.
+and highlights atom/residue text matches. Its CA/P trace lines are visual guides
+without inferred bond topology. Download the linked PDB and use VMD, ChimeraX,
+or another full molecular package when bond topology, surfaces, measurements,
+or publication rendering are needed.
 
 Representative structures are included in the HTML only up to explicit bounded
 asset limits. Omitted structures and figures remain linked and are listed in the
@@ -56,19 +81,11 @@ its compact summary sidecar rather than loaded into the browser. The raw report
 remains linked. This affects only the interactive preview; it does not remove,
 change, or reclassify the analysis result.
 
-## Optional installation
+## Build the browser
 
-The core analysis package does not install or invoke this viewer. A
-non-interactive installation therefore needs no configuration change:
-
-```bash
-python -m pip install "salsbury-md-analysis>=0.1.1,<0.2"
-```
-
-Install the companion and build the browser when wanted:
+After the core campaign finishes, run:
 
 ```bash
-python -m pip install salsbury-md-analysis-interactive
 salsbury-md-analysis-interactive path/to/analysis-root
 ```
 
@@ -79,10 +96,15 @@ Generation is immutable. If the output directory already exists, its manifest
 and HTML hash must validate before it is reused. A partial or changed directory
 fails closed instead of being overwritten.
 
+The companion accepts an analysis root, not a PDB, PSF, PRMTOP, trajectory, or
+analysis config. Follow the
+[NEMO zinc-finger walkthrough](../tutorials/nemo_zinc_finger/README.md) for the
+complete sequence from simulation files to an interactive report.
+
 ## Interpretation
 
-The result browser does not promote technical completion into scientific
-validity. Automated findings without a supported adjusted p-value remain
-descriptive. FES basins, smoothing, clustering, silhouettes, state populations,
+Treat technical completion and scientific validity as separate judgments.
+Automated findings without a supported adjusted p-value remain descriptive.
+FES basins, smoothing, clustering, silhouettes, state populations,
 representatives, correlations, and ion geometry still require review of
 sampling, convergence, chemistry, uncertainty, and the underlying method report.

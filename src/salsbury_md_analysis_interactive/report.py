@@ -626,10 +626,38 @@ def _collect_data(
         severity_order.get(str(row.get("severity", "info")), 9),
         str(row.get("module_id", "")), str(row.get("code", "")),
     ))
-    finding_rows = (
+    highlighted_finding_rows = (
         [row for row in findings.get("findings", []) if isinstance(row, dict)]
         if isinstance(findings, dict) else []
     )
+    finding_rows = (
+        [row for row in findings.get("all_candidates", []) if isinstance(row, dict)]
+        if isinstance(findings, dict) else []
+    ) or highlighted_finding_rows
+    headline_rows = (
+        [row for row in findings.get("headline_findings", []) if isinstance(row, dict)]
+        if isinstance(findings, dict) else []
+    )
+    secondary_rows = (
+        [row for row in findings.get("secondary_findings", []) if isinstance(row, dict)]
+        if isinstance(findings, dict) else []
+    )
+    if not headline_rows:
+        headline_count = min(
+            int(findings.get("headline_count", min(12, len(highlighted_finding_rows))))
+            if isinstance(findings, dict) else 0,
+            len(highlighted_finding_rows),
+        )
+        headline_rows = highlighted_finding_rows[:headline_count]
+        secondary_rows = highlighted_finding_rows[headline_count:]
+    for index, row in enumerate(finding_rows):
+        if row.get("presentation_tier"):
+            continue
+        row["presentation_tier"] = (
+            "headline" if index < len(headline_rows) else
+            "secondary" if index < len(highlighted_finding_rows) else
+            "additional_candidate"
+        )
     module_accounting = (
         [row for row in findings.get("module_accounting", []) if isinstance(row, dict)]
         if isinstance(findings, dict) else []
@@ -671,6 +699,9 @@ def _collect_data(
         "system_ids": _system_ids(system, project),
         "status_counts": status_counts,
         "findings": finding_rows,
+        "highlighted_findings": highlighted_finding_rows,
+        "headline_findings": headline_rows,
+        "secondary_findings": secondary_rows,
         "finding_metadata": _preview(findings) if isinstance(findings, dict) else None,
         "module_accounting": module_accounting,
         "picker_qc_records": picker_qc_records,
@@ -726,10 +757,10 @@ const fmt=v=>typeof v==='number'?(Math.abs(v)>=1000?v.toLocaleString():Number(v.
 function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));location.hash=name;window.scrollTo(0,0)}
 $$('.nav button').forEach(b=>b.onclick=()=>go(b.dataset.view));
 function badge(text,cls=''){return `<span class="badge ${cls}">${esc(text)}</span>`}
-function findingHTML(f,i){const q=f.statistically_significant===true?'statistically significant after correction':(f.evidence_level||'descriptive');return `<div class="finding" data-category="${esc(f.category)}" data-systems="${esc((f.system_ids||[]).join(' '))}" data-search="${esc(JSON.stringify(f).toLowerCase())}"><div class="rank">${i+1}</div><div><div>${esc(f.statement)}</div><div class="badges">${badge(f.category)}${badge(f.module_id)}${badge(q,f.statistically_significant===true?'sig':'')}${(f.system_ids||[]).map(s=>badge(s)).join('')}</div><div class="muted" style="font-size:11px;margin-top:5px">Effect: ${fmt(f.effect_value)} · <a href="${esc(f.report_path?('../'+String(f.report_path).replace(/^.*?results\//,'results/')):'#')}" target="_blank">raw evidence</a></div></div></div>`}
-function renderFindings(){const host=$('#findings-list');host.innerHTML=DATA.findings.length?DATA.findings.map(findingHTML).join(''):'<div class="empty">No ranked findings were generated.</div>';const cats=[...new Set(DATA.findings.map(f=>f.category))].sort();const systems=[...new Set(DATA.findings.flatMap(f=>f.system_ids||[]))].sort();$('#finding-category').innerHTML='<option value="">All categories</option>'+cats.map(v=>`<option>${esc(v)}</option>`).join('');$('#finding-system').innerHTML='<option value="">All systems</option>'+systems.map(v=>`<option>${esc(v)}</option>`).join('');const filter=()=>{const q=$('#finding-search').value.toLowerCase(),c=$('#finding-category').value,s=$('#finding-system').value;$$('.finding',host).forEach(row=>row.hidden=!!((q&&!row.dataset.search.includes(q))||(c&&row.dataset.category!==c)||(s&&!row.dataset.systems.split(' ').includes(s))))};['finding-search','finding-category','finding-system'].forEach(id=>$(`#${id}`).oninput=filter)}
+function findingHTML(f,i){const q=f.statistically_significant===true?'statistically significant after correction':(f.evidence_level||'descriptive'),tier=f.presentation_tier||'headline';return `<div class="finding" data-category="${esc(f.category)}" data-systems="${esc((f.system_ids||[]).join(' '))}" data-tier="${esc(tier)}" data-search="${esc(JSON.stringify(f).toLowerCase())}"><div class="rank">${esc(String(f.finding_id||i+1).replace('finding-','').replace(/^0+/,''))}</div><div><div>${esc(f.statement)}</div><div class="badges">${badge(tier.replaceAll('_',' '))}${badge(f.category)}${badge(f.module_id)}${badge(q,f.statistically_significant===true?'sig':'')}${(f.system_ids||[]).map(s=>badge(s)).join('')}</div><div class="muted" style="font-size:11px;margin-top:5px">Effect: ${fmt(f.effect_value)} · <a href="${esc(f.report_path?('../'+String(f.report_path).replace(/^.*?results\//,'results/')):'#')}" target="_blank">raw evidence</a></div></div></div>`}
+function renderFindings(){const host=$('#findings-list');host.innerHTML=DATA.findings.length?DATA.findings.map(findingHTML).join(''):'<div class="empty">No ranked findings were generated.</div>';const cats=[...new Set(DATA.findings.map(f=>f.category))].sort();const systems=[...new Set(DATA.findings.flatMap(f=>f.system_ids||[]))].sort();$('#finding-category').innerHTML='<option value="">All categories</option>'+cats.map(v=>`<option>${esc(v)}</option>`).join('');$('#finding-system').innerHTML='<option value="">All systems</option>'+systems.map(v=>`<option>${esc(v)}</option>`).join('');const tier=$('#finding-tier');tier.innerHTML=`<option value="headline">Headline (${DATA.headline_findings.length})</option><option value="secondary">Secondary (${DATA.secondary_findings.length})</option><option value="additional_candidate">Additional candidates (${Math.max(0,DATA.findings.length-DATA.highlighted_findings.length)})</option><option value="">All candidates (${DATA.findings.length})</option>`;const filter=()=>{const q=$('#finding-search').value.toLowerCase(),c=$('#finding-category').value,s=$('#finding-system').value,t=tier.value;let shown=0;$$('.finding',host).forEach(row=>{row.hidden=!!((q&&!row.dataset.search.includes(q))||(c&&row.dataset.category!==c)||(s&&!row.dataset.systems.split(' ').includes(s))||(t&&row.dataset.tier!==t));if(!row.hidden)shown+=1});$('#finding-summary').textContent=`Showing ${shown} of ${DATA.findings.length} ranked candidates.`};['finding-search','finding-category','finding-system','finding-tier'].forEach(id=>$(`#${id}`).oninput=filter);filter()}
 function issueHTML(i){const sev=String(i.severity||'info').toLowerCase();return `<div class="issue ${esc(sev)}"><strong>${esc(sev.toUpperCase())}</strong> ${i.code?`<code>${esc(i.code)}</code>`:''}<div>${esc(i.message||i.reason||JSON.stringify(i))}</div><small class="muted">${esc(i.module_id||'')} ${esc(i.source||'')} ${esc(i.location||'')}</small></div>`}
-function renderOverview(){const complete=DATA.status_counts.complete||0,failed=DATA.status_counts.failed||0,meta=DATA.finding_metadata||{};$('#stats').innerHTML=[['Module reports',DATA.reports.length],['Picker-accounted modules',DATA.module_accounting.length],['Silent omissions',meta.silent_omission_count??'—'],['Finding candidates',meta.candidate_count??DATA.findings.length],['Highlighted findings',DATA.findings.length],['Need attention',failed]].map(([a,b])=>`<div class="stat"><strong>${fmt(b)}</strong><span>${esc(a)}</span></div>`).join('');$('#overview-findings').innerHTML=DATA.findings.slice(0,8).map(findingHTML).join('')||'<div class="empty">No findings available.</div>';const urgent=DATA.qc_issues.filter(i=>['error','warning'].includes(String(i.severity).toLowerCase())).slice(0,8);$('#overview-qc').innerHTML=urgent.map(issueHTML).join('')||'<div class="empty">No error or warning issues were indexed.</div>'}
+function renderOverview(){const complete=DATA.status_counts.complete||0,failed=DATA.status_counts.failed||0,meta=DATA.finding_metadata||{};$('#stats').innerHTML=[['Module reports',DATA.reports.length],['Picker-accounted modules',DATA.module_accounting.length],['Silent omissions',meta.silent_omission_count??'—'],['Headline findings',DATA.headline_findings.length],['Secondary findings',DATA.secondary_findings.length],['All candidates',DATA.findings.length],['Need attention',failed]].map(([a,b])=>`<div class="stat"><strong>${fmt(b)}</strong><span>${esc(a)}</span></div>`).join('');$('#overview-findings').innerHTML=DATA.headline_findings.map(findingHTML).join('')||'<div class="empty">No findings available.</div>';const urgent=DATA.qc_issues.filter(i=>['error','warning'].includes(String(i.severity).toLowerCase())).slice(0,8);$('#overview-qc').innerHTML=urgent.map(issueHTML).join('')||'<div class="empty">No error or warning issues were indexed.</div>'}
 function moduleHTML(r){const metrics=(r.key_metrics||[]).map(m=>`<div class="metric"><strong>${esc(m.label)}</strong><br>${esc(fmt(m.value))}</div>`).join(''),a=DATA.module_accounting.find(x=>x.module_id===r.module_id);return `<details class="module-row" data-search="${esc((r.module_id+' '+JSON.stringify(r.issues)+' '+JSON.stringify(a||{})).toLowerCase())}"><summary><span>${esc(r.title)}</span><span>${a?badge(a.disposition):''}${badge(r.technical_status,r.technical_status==='failed'?'severity-error':'')}</span></summary><p class="muted">Scientific status: ${esc(r.scientific_status)} · ${(r.size_bytes/1024).toFixed(1)} KiB · <a href="${esc(r.href)}" target="_blank">open raw JSON</a></p>${a?`<p><strong>Picker accounting:</strong> ${esc(a.reason)} Candidates: ${fmt(a.candidate_count)}; highlighted: ${fmt(a.reported_finding_count)}.</p>`:''}<div class="metric-list">${metrics||'<span class="muted">No compact numeric metrics indexed.</span>'}</div>${(r.issues||[]).map(issueHTML).join('')}<details><summary>Bounded JSON preview</summary><pre class="json">${esc(JSON.stringify(r.preview,null,2))}</pre></details>${(r.limitations||[]).length?`<details><summary>Scientific limitations</summary><ul>${r.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}</details>`}
 function renderModules(){const host=$('#module-list');host.innerHTML=DATA.reports.map(moduleHTML).join('')||'<div class="empty">No module reports found.</div>';$('#module-search').oninput=()=>{const q=$('#module-search').value.toLowerCase();$$('.module-row',host).forEach(r=>r.hidden=q&&!r.dataset.search.includes(q))}}
 function renderAccounting(){const rows=DATA.module_accounting||[],host=$('#accounting-table');if(!rows.length){host.innerHTML='<div class="empty">No picker-accounting records were found.</div>';return}const cols=['module_id','review_role','report_count','candidate_count','reported_finding_count','disposition'];host.innerHTML=`<table><thead><tr>${cols.map(c=>`<th>${esc(c.replaceAll('_',' '))}</th>`).join('')}<th>Reason</th></tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(fmt(r[c]))}</td>`).join('')}<td style="white-space:normal">${esc(r.reason)}</td></tr>`).join('')}</tbody></table>`}
@@ -776,7 +807,7 @@ def _render_html(data: Mapping[str, object]) -> str:
 <main class="main"><div class="topline"><div><div class="eyebrow">Analysis campaign</div><h1>{title}</h1><div class="muted">{html.escape(', '.join(data.get('system_ids', [])) or 'single or inferred system')}</div></div><span class="status">{html.escape(str(data['technical_status']))}</span></div>
 <div class="boundary-banner"><strong>Interpretation boundary.</strong> {html.escape(str(data['scientific_boundary']))}</div>
 <section id="view-overview" class="view"><div id="stats" class="stats"></div><section class="card"><h2>Highest-priority findings</h2><p class="muted">Ranked by the documented presentation contract. Descriptive rankings are not claims of biological importance.</p><div id="overview-findings"></div><p><button onclick="go('findings')">Review all ranked findings</button></p></section><section class="card"><h2>QC requiring attention</h2><div id="overview-qc"></div></section></section>
-<section id="view-findings" class="view"><section class="card"><h2>Key findings</h2><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-category"></select><select id="finding-system"></select></div><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
+<section id="view-findings" class="view"><section class="card"><h2>Ranked findings</h2><p class="muted">Twelve headline findings are shown first by default. Secondary highlights and every additional ranked candidate remain searchable here.</p><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-tier"></select><select id="finding-category"></select><select id="finding-system"></select></div><p id="finding-summary" class="muted"></p><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
 <section id="view-states" class="view"><section class="card"><h2>Molecular states & generated figures</h2><p class="muted">FES surfaces preserve smoothing identity; clustering panels preserve method and silhouette evidence.</p><div class="visual-controls"><select id="visual-kind"></select></div></section><div id="visual-list"></div><h2>Pre-rendered figures</h2><div id="figure-list" class="grid"></div></section>
 <section id="view-molecules" class="view"><section class="card"><h2>Representative molecular structures</h2><p class="muted">Offline point/trace viewer. CA/P lines are visual guides, not inferred chemical bonds. Download the source PDB for full molecular-software inspection.</p><div class="molecule-layout"><div class="viewer"><div class="viewer-tools"><select id="viewer-representation"><option value="overview">Macromolecule + ligands/ions</option><option value="all">All atoms</option><option value="backbone">CA/P trace</option><option value="hetero">Ligands/ions/cofactors</option></select><select id="viewer-color"><option value="element">Color by element</option><option value="chain">Color by chain</option><option value="bfactor">Color by B factor</option></select><label style="color:white"><input id="viewer-h" type="checkbox"> H</label><input id="viewer-search" placeholder="A:CYS54:SG"><button id="viewer-reset">Reset</button></div><canvas id="molecule-canvas" width="900" height="520"></canvas><div id="viewer-info" class="viewer-info"></div></div><div><h3 id="structure-title">Structures</h3><div id="structure-list" class="structure-list"></div></div></div></section></section>
 <section id="view-analyses" class="view"><section class="card"><h2>All analyses</h2><p class="muted">Every indexed module is listed whether or not it produced a ranked finding.</p><div class="filters"><input id="module-search" placeholder="Search modules and issues"></div><div id="module-list"></div></section></section>
@@ -859,7 +890,10 @@ def build_interactive_report(
             "index_sha256": _sha256_file(index_path),
             "index_size_bytes": index_path.stat().st_size,
             "module_report_count": len(data["reports"]),
-            "finding_count": len(data["findings"]),
+            "finding_count": len(data["highlighted_findings"]),
+            "headline_finding_count": len(data["headline_findings"]),
+            "secondary_finding_count": len(data["secondary_findings"]),
+            "searchable_candidate_count": len(data["findings"]),
             "picker_accounted_module_count": len(data["module_accounting"]),
             "picker_qc_record_count": len(data["picker_qc_records"]),
             "picker_silent_omission_count": (

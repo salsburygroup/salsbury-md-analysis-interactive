@@ -24,6 +24,7 @@ class InteractiveReportTests(unittest.TestCase):
                 "resource_table_enabled": True,
                 "finding_picker_enabled": True,
                 "interactive_report_enabled": True,
+                "headline_findings": 1,
                 "maximum_findings": 20,
             },
         }), encoding="utf-8")
@@ -44,9 +45,13 @@ class InteractiveReportTests(unittest.TestCase):
             "scientific_status": "not evaluated",
             "candidate_count": 1,
             "reported_count": 1,
+            "headline_count": 1,
+            "secondary_count": 0,
+            "searchable_candidate_count": 2,
             "silent_omission_count": 0,
             "findings": [{
                 "finding_id": "finding-000001",
+                "presentation_tier": "headline",
                 "category": "free_energy_surface",
                 "module_id": "pca_fes_basins",
                 "statement": "Basin 1 contains the largest observed frame fraction.",
@@ -55,6 +60,42 @@ class InteractiveReportTests(unittest.TestCase):
                 "effect_value": 0.75,
                 "statistically_significant": None,
                 "report_path": "results/pca-fes-basins/report.json",
+            }],
+            "headline_findings": [{
+                "finding_id": "finding-000001",
+                "presentation_tier": "headline",
+                "category": "free_energy_surface",
+                "module_id": "pca_fes_basins",
+                "statement": "Basin 1 contains the largest observed frame fraction.",
+                "evidence_level": "descriptive",
+                "system_ids": ["control"],
+                "effect_value": 0.75,
+                "statistically_significant": None,
+                "report_path": "results/pca-fes-basins/report.json",
+            }],
+            "secondary_findings": [],
+            "all_candidates": [{
+                "finding_id": "finding-000001",
+                "presentation_tier": "headline",
+                "category": "free_energy_surface",
+                "module_id": "pca_fes_basins",
+                "statement": "Basin 1 contains the largest observed frame fraction.",
+                "evidence_level": "descriptive",
+                "system_ids": ["control"],
+                "effect_value": 0.75,
+                "statistically_significant": None,
+                "report_path": "results/pca-fes-basins/report.json",
+            }, {
+                "finding_id": "finding-000002",
+                "presentation_tier": "additional_candidate",
+                "category": "structural_dynamics",
+                "module_id": "pooled_rmsf",
+                "statement": "An additional ranked candidate remains searchable.",
+                "evidence_level": "descriptive",
+                "system_ids": ["control"],
+                "effect_value": 1.2,
+                "statistically_significant": None,
+                "report_path": "results/rmsf/report.json",
             }],
             "module_accounting": [{
                 "module_id": "pca_fes_basins",
@@ -171,6 +212,9 @@ class InteractiveReportTests(unittest.TestCase):
             )
             self.assertEqual(manifest["generator_version"], "0.1.1")
             self.assertEqual(manifest["finding_count"], 1)
+            self.assertEqual(manifest["headline_finding_count"], 1)
+            self.assertEqual(manifest["secondary_finding_count"], 0)
+            self.assertEqual(manifest["searchable_candidate_count"], 2)
             self.assertEqual(manifest["picker_accounted_module_count"], 1)
             self.assertEqual(manifest["picker_qc_record_count"], 1)
             self.assertEqual(manifest["picker_silent_omission_count"], 0)
@@ -185,6 +229,8 @@ class InteractiveReportTests(unittest.TestCase):
                 "representative-1", "Basin 1 contains",
                 "Complete picker accounting", "ranked_candidates",
                 "Picker QC and interpretation records",
+                "Additional candidates (",
+                "An additional ranked candidate remains searchable.",
                 "Review the structural fixture",
                 '\"analysis_frame_stride\":4',
             ):

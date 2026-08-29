@@ -24,8 +24,9 @@ class InteractiveReportTests(unittest.TestCase):
                 "resource_table_enabled": True,
                 "finding_picker_enabled": True,
                 "interactive_report_enabled": True,
-                "headline_findings": 1,
-                "maximum_findings": 20,
+                "minimum_headline_findings": 10,
+                "headline_findings": 12,
+                "maximum_findings": 50,
             },
         }), encoding="utf-8")
         (root / "system.json").write_text(json.dumps({
@@ -74,6 +75,16 @@ class InteractiveReportTests(unittest.TestCase):
                 "report_path": "results/pca-fes-basins/report.json",
             }],
             "secondary_findings": [],
+            "presentation_contract": {
+                "contract_id": "headline-secondary-50-v1",
+                "headline_count_range": [10, 12],
+                "highlighted_findings_total": 50,
+                "secondary_count_range": [38, 40],
+                "selected_headline_count": 1,
+                "status": "candidate_limited",
+                "candidate_limited": True,
+                "headline_selection": "bh_significance_at_boundary",
+            },
             "all_candidates": [{
                 "finding_id": "finding-000001",
                 "presentation_tier": "headline",
@@ -249,6 +260,72 @@ class InteractiveReportTests(unittest.TestCase):
                 handle.write("tamper")
             with self.assertRaises(InteractiveReportError):
                 build_interactive_report(root)
+
+    def test_fifty_highlights_and_all_additional_candidates_remain_indexed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self._root(temporary)
+            candidates = [
+                {
+                    "finding_id": f"finding-{index + 1:06d}",
+                    "presentation_tier": (
+                        "headline" if index < 11 else
+                        "secondary" if index < 50 else
+                        "additional_candidate"
+                    ),
+                    "category": "other_physical",
+                    "module_id": "optional_observables",
+                    "statement": f"Searchable candidate {index + 1}",
+                    "evidence_level": "descriptive",
+                    "system_ids": ["control"],
+                    "effect_value": float(60 - index),
+                    "statistically_significant": index < 11,
+                    "report_path": "results/rmsf/report.json",
+                }
+                for index in range(60)
+            ]
+            findings_path = root / "prioritized_findings.json"
+            findings = json.loads(findings_path.read_text(encoding="utf-8"))
+            findings.update({
+                "candidate_count": 60,
+                "reported_count": 50,
+                "headline_count": 11,
+                "secondary_count": 39,
+                "searchable_candidate_count": 60,
+                "additional_candidate_count": 10,
+                "findings": candidates[:50],
+                "headline_findings": candidates[:11],
+                "secondary_findings": candidates[11:50],
+                "all_candidates": candidates,
+                "presentation_contract": {
+                    "contract_id": "headline-secondary-50-v1",
+                    "headline_count_range": [10, 12],
+                    "highlighted_findings_total": 50,
+                    "secondary_count_range": [38, 40],
+                    "selected_headline_count": 11,
+                    "status": "satisfied",
+                    "candidate_limited": False,
+                    "headline_selection": "bh_significance_at_boundary",
+                },
+            })
+            findings_path.write_text(json.dumps(findings), encoding="utf-8")
+
+            result = build_interactive_report(root)
+            manifest = json.loads(
+                (root / "interactive-report" / "manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            html_text = Path(result["index_path"]).read_text(encoding="utf-8")
+            self.assertEqual(manifest["headline_finding_count"], 11)
+            self.assertEqual(manifest["secondary_finding_count"], 39)
+            self.assertEqual(manifest["finding_count"], 50)
+            self.assertEqual(manifest["searchable_candidate_count"], 60)
+            self.assertEqual(
+                manifest["finding_presentation_contract"]["status"],
+                "satisfied",
+            )
+            self.assertIn("Searchable candidate 60", html_text)
+            self.assertIn("10–12 findings", html_text)
 
     def test_nonfinite_scientific_values_become_strict_json_nulls(self):
         with tempfile.TemporaryDirectory() as temporary:

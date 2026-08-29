@@ -58,6 +58,12 @@ candidate, QC result, technical support, interpretive context, or a reviewed
 result without an automatic highlight. QC records remain separate from the
 scientific ranking.
 
+The opening page shows 10–12 headline findings. Ten are always shown; the
+picker adds an eleventh or twelfth only when supported statistical significance
+reaches that ranking boundary. Secondary findings bring the highlighted total
+to 50 when enough candidates exist. Every other candidate remains available in
+the searchable browser and the core JSON and CSV files.
+
 Automated ranking is a navigation aid. It does not establish convergence,
 causality, mechanism, biological importance, statistical significance, or
 scientific validity.

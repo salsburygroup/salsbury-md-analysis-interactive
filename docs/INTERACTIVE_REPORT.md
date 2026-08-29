@@ -46,8 +46,11 @@ to an external service.
 
 The browser presents:
 
-1. QC errors and warnings plus the configured headline findings (12 by default);
-2. headline findings first, secondary highlights second, and every additional
+1. QC errors and warnings plus 10–12 headline findings; the picker always shows
+   10 and extends the opening section to 11 or 12 only when a
+   Benjamini-Hochberg-significant finding reaches the boundary;
+2. enough secondary findings to bring the highlighted total to 50 when the
+   campaign has at least 50 candidates, followed by every additional
    ranked candidate through searchable tier, system, category, and text
    filters, with raw report links and complete picker accounting;
 3. FES surfaces at every retained smoothing level and per-system surface;

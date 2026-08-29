@@ -46,9 +46,10 @@ to an external service.
 
 The browser presents:
 
-1. QC errors and warnings plus the highest-ranked findings;
-2. every highlighted finding with system, module, evidence level, effect, and
-   raw report link, followed by complete picker accounting for every module;
+1. QC errors and warnings plus the configured headline findings (12 by default);
+2. headline findings first, secondary highlights second, and every additional
+   ranked candidate through searchable tier, system, category, and text
+   filters, with raw report links and complete picker accounting;
 3. FES surfaces at every retained smoothing level and per-system surface;
 4. clustering populations and silhouette evidence;
 5. RMSF and affordable DCCM views plus pre-rendered figures;

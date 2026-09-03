@@ -640,6 +640,21 @@ class InteractiveReportTests(unittest.TestCase):
             with self.assertRaisesRegex(InteractiveReportError, "source reports"):
                 build_interactive_report(Path(temporary))
 
+    def test_public_acceptance_record_preserves_release_boundary(self):
+        root = Path(__file__).resolve().parents[1]
+        path = (
+            root / "validation" /
+            "nemo_zinc_finger_v0.1.3_public_acceptance.json"
+        )
+        record = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(record["candidate_version"], "0.1.3")
+        self.assertEqual(record["compatible_core_version"], "0.1.2")
+        self.assertEqual(record["technical_status"], "complete")
+        self.assertEqual(record["scientific_status"], "not evaluated")
+        self.assertEqual(record["unexpected_errors"], [])
+        self.assertEqual(record["omitted_figure_count"], 0)
+        self.assertEqual(record["omitted_structure_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

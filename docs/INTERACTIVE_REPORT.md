@@ -11,11 +11,11 @@ command:
 
 ```bash
 python -m pip install \
-  "salsbury-md-analysis @ git+https://github.com/salsburygroup/salsbury-md-analysis.git@main" \
-  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@main"
+  "salsbury-md-analysis @ git+https://github.com/salsburygroup/salsbury-md-analysis.git@v0.1.2" \
+  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
 ```
 
-The interactive package declares `salsbury-md-analysis>=0.1.1,<0.2` as a
+The interactive package declares `salsbury-md-analysis>=0.1.2,<0.2` as a
 dependency, but that core package is not on PyPI. Supplying both GitHub
 requirements lets pip resolve the dependency without two source checkouts.
 

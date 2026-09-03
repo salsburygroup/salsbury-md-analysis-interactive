@@ -1,15 +1,16 @@
 # Dependencies and licenses
 
-The interactive package has one required third-party package:
+The interactive package uses these third-party components:
 
 | Dependency | Supported version | License | Purpose |
 |---|---|---|---|
+| `ijson` | `>=3.2,<4` | BSD 3-Clause | Reads the display fields from large FES and clustering reports without loading their assignments into memory |
 | `salsbury-md-analysis` | `>=0.1.1,<0.2` | BSD 3-Clause | Produces the analysis reports consumed by this viewer |
+| `3Dmol.js` | `2.5.5` (bundled) | BSD 3-Clause | Renders offline molecular cartoons, bonded ligands and cofactors, and space-filling ions |
 
-The viewer implementation itself uses only the Python standard library. Browser
-rendering uses embedded JavaScript and CSS written for this project; it does not
-download or bundle a JavaScript framework, molecular viewer, font, or analytics
-service.
+The report bundles 3Dmol.js so molecular views work offline. The upstream
+license is retained in `third_party/3Dmol-LICENSE.txt`. The report does not
+download a font, analytics service, or runtime JavaScript.
 
 The core package is not on PyPI. The installation examples therefore supply
 the core and interactive GitHub requirements together. External executables

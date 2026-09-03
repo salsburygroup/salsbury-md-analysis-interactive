@@ -1,6 +1,6 @@
 # Interactive result browser
 
-Version 0.1.1 is an optional, offline front end for completed
+Version 0.1.3 is an optional, offline front end for completed
 `salsbury-md-analysis` campaigns. It reads the existing JSON, CSV, structures,
 and figures. Those source artifacts remain the scientific record.
 
@@ -36,9 +36,10 @@ Running the companion command against a completed local or Slurm campaign
 writes:
 
 - `interactive-report/index.html`, the self-contained result browser;
+- `interactive-report/evidence/`, portable copies or compact indexes for the
+  JSON, CSV, PDB, and figure files linked from the browser; and
 - `interactive-report/manifest.json`, which records the generator version, HTML
-  hash, source-report hashes, included assets, and the technical/scientific
-  status boundary.
+  hash, source-report hashes, and included assets.
 
 Open `interactive-report/index.html` in a current browser. It does not need a
 web server or internet connection, and it does not send structures or results
@@ -46,32 +47,50 @@ to an external service.
 
 The browser presents:
 
-1. QC errors and warnings plus 10–12 headline findings; the picker always shows
+1. 10–12 headline findings; the picker always shows
    10 and extends the opening section to 11 or 12 only when a
    Benjamini-Hochberg-significant finding reaches the boundary;
 2. enough secondary findings to bring the highlighted total to 50 when the
    campaign has at least 50 candidates, followed by every additional
    ranked candidate through searchable tier, system, category, and text
-   filters, with raw report links and complete picker accounting;
-3. FES surfaces at every retained smoothing level and per-system surface;
-4. clustering populations and silhouette evidence;
-5. RMSF and affordable DCCM views plus pre-rendered figures;
-6. interactive representative PDB structures;
+   filters and complete picker accounting;
+3. the primary FES surface at the configured smoothing level, its basin
+   populations by system, and a separate smoothing-sensitivity table;
+4. clustering methods in descending silhouette-score order, with each method
+   named and each system's state populations shown beside linked
+   representative structures;
+5. a separate tab for each analysis class, including RMSF, DCCM, ions,
+   hydrogen bonds, hydration, DNA geometry, kinetics, and comparisons when
+   those classes are present;
+6. interactive non-solvent representative structures, pre-rendered figures,
+   and CSV tables from the core presentation manifest;
 7. every module report, including its picker disposition and modules that
    produced no ranked finding;
 8. measured CPU, memory, frame selection, and observation accounting; and
 9. resolved configuration, chemical context, conformational views, QC, and
-   provenance. Picker QC records have their own section and are not promoted
-   into the scientific ranking.
+   provenance. Structural and preparation QC stay in the QC tab. Review notes
+   from clustering or another analysis stay in that analysis tab.
+
+Radius of gyration appears first as a Scott-rule histogram. Its
+replica-resolved time series remains available in the same analysis tab.
+Findings open the exact figure, table, or structure named by the core artifact
+manifest rather than the first result from the same module.
 
 ## Molecular viewer boundary
 
-The built-in viewer reads PDB atom records with project-owned JavaScript. It
-supports rotation and zoom, filters atoms, colors by element, chain, or B-factor,
-and highlights atom/residue text matches. Its CA/P trace lines are visual guides
-without inferred bond topology. Download the linked PDB and use VMD, ChimeraX,
-or another full molecular package when bond topology, surfaces, measurements,
-or publication rendering are needed.
+The built-in viewer reads the packaged PDB with a bundled copy of 3Dmol.js. The
+PDB retains every non-solvent atom. The default display uses a
+NewCartoon-style ribbon for protein and nucleic-acid polymers, bonded atoms for
+ligands and cofactors, and space-filling spheres for ions. It supports rotation,
+zoom, atom filters, element/chain/B-factor colors, and atom or residue search.
+
+When a state export includes the core state-ion stability analysis, the viewer
+shows only ions assigned to occupied, low-RMSF sites in that state. The
+structure still retains all protein, nucleic acid, ligand, and cofactor atoms.
+
+The renderer is not VMD itself. Download the linked PDB and use VMD, ChimeraX,
+or another full molecular package for surfaces, measurements, topology-aware
+editing, or publication rendering.
 
 Representative structures are included in the HTML only up to explicit bounded
 asset limits. Omitted structures and figures remain linked and are listed in the
@@ -79,11 +98,11 @@ provenance panel. Multi-frame state trajectories are never embedded in the HTML.
 
 ## Large reports
 
-The finalizer never treats browser convenience as permission for unbounded
-memory use. A JSON report larger than 128 MB is hash-indexed and represented by
-its compact summary sidecar rather than loaded into the browser. The raw report
-remains linked. This affects only the interactive preview; it does not remove,
-change, or reclassify the analysis result.
+The finalizer does not load a large result wholesale. For a JSON report larger
+than 128 MB, the `ijson` reader streams the FES grids or clustering scores and
+populations needed by the display while skipping frame assignments, centers,
+and other large arrays. The browser receives a compact evidence index linked to
+the source report hash.
 
 ## Build the browser
 
@@ -105,10 +124,9 @@ analysis config. Follow the
 [NEMO zinc-finger walkthrough](../tutorials/nemo_zinc_finger/README.md) for the
 complete sequence from simulation files to an interactive report.
 
-## Interpretation
+## Scientific review
 
-Treat technical completion and scientific validity as separate judgments.
-Automated findings without a supported adjusted p-value remain descriptive.
-FES basins, smoothing, clustering, silhouettes, state populations,
-representatives, correlations, and ion geometry still require review of
-sampling, convergence, chemistry, uncertainty, and the underlying method report.
+Review sampling, convergence, chemistry, uncertainty, and the underlying
+method report before interpreting FES basins, clustering, silhouettes, state
+populations, representatives, correlations, or ion geometry. The report helps
+locate and compare evidence; it does not replace that review.

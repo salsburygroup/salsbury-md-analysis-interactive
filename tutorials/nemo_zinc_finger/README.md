@@ -119,15 +119,28 @@ external service, or download JavaScript after it opens.
 
 ## 6. Read the report
 
-Read the QC panel first. Then review the prioritized findings, FES and
-clustering views, representative zinc-finger structures, and the resources and
-sampling table. The **All analyses** section keeps every completed module in
-view, including reports that the automatic picker did not rank near the top.
+Read the prioritized findings, then open their linked analysis tabs, figures,
+or representative structures. The molecular-states tab places the FES first
+and orders clustering methods by silhouette score. Its population tables show
+how the NEMO frames are distributed across clusters. The structure viewer keeps
+the protein and zinc ion while excluding solvent. If the core report includes
+state-conditioned ion stability, a state representative shows zinc only when
+it belongs to an occupied, low-RMSF site in that state.
 
-The automatic ranking helps you decide where to look. It does not establish
-convergence, causality, mechanism, biological importance, statistical
-significance, or scientific validity. Open the linked source report whenever a
-finding needs its full settings, warnings, frame selection, or provenance.
+QC has its own tab. Clustering review notes remain under Clustering rather than
+appearing as structural QC. Use the separate analysis tabs to move through
+RMSD/Rg, RMSF, SASA, ions, correlations, and the other completed analyses. The
+**All reports** tab is the complete index.
+
+Radius of gyration opens as a Scott-rule histogram. Its time series is a
+secondary view in the same tab. FES findings open the configured primary
+surface, and population findings open the matching per-system table or chart.
+The report keeps smoothing sensitivity in a separate table instead of showing
+every smoothing level as another primary FES.
+
+The `interactive-report/evidence/` directory contains the JSON, CSV, PDB, and
+figure files opened by report links. Move or zip the whole
+`interactive-report/` directory so those links remain intact.
 
 ## Rebuild with different viewer limits
 

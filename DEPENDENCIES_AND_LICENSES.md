@@ -5,7 +5,7 @@ The interactive package uses these third-party components:
 | Dependency | Supported version | License | Purpose |
 |---|---|---|---|
 | `ijson` | `>=3.2,<4` | BSD 3-Clause | Reads the display fields from large FES and clustering reports without loading their assignments into memory |
-| `salsbury-md-analysis` | `>=0.1.1,<0.2` | BSD 3-Clause | Produces the analysis reports consumed by this viewer |
+| `salsbury-md-analysis` | `>=0.1.2,<0.2` | BSD 3-Clause | Produces the analysis reports consumed by this viewer |
 | `3Dmol.js` | `2.5.5` (bundled) | BSD 3-Clause | Renders offline molecular cartoons, bonded ligands and cofactors, and space-filling ions |
 
 The report bundles 3Dmol.js so molecular views work offline. The upstream

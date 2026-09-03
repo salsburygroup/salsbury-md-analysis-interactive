@@ -17,11 +17,11 @@ without making source checkouts:
 
 ```bash
 python -m pip install \
-  "salsbury-md-analysis @ git+https://github.com/salsburygroup/salsbury-md-analysis.git@main" \
-  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@main"
+  "salsbury-md-analysis @ git+https://github.com/salsburygroup/salsbury-md-analysis.git@v0.1.2" \
+  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
 ```
 
-The interactive package declares `salsbury-md-analysis>=0.1.1,<0.2` as a
+The interactive package declares `salsbury-md-analysis>=0.1.2,<0.2` as a
 dependency. Both GitHub requirements appear above because that dependency is
 not published on PyPI. A source checkout is needed only for development or for
 bundled teaching files such as the NEMO tutorial trajectory.

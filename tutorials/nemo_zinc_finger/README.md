@@ -16,7 +16,8 @@ Clone or download the core repository, which contains the PDB, PSF, DCD,
 configuration, and provenance record used here:
 
 ```bash
-git clone https://github.com/salsburygroup/salsbury-md-analysis.git
+git clone --branch v0.1.2 --depth 1 \
+  https://github.com/salsburygroup/salsbury-md-analysis.git
 cd salsbury-md-analysis
 ```
 
@@ -34,7 +35,7 @@ micromamba create --prefix ./.venv --file environment.yml \
   --override-channels --channel conda-forge --strict-channel-priority
 ./.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
 ./.venv/bin/python -m pip install \
-  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@main"
+  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
 ```
 
 Check that the secondary-structure executable is available:

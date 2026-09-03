@@ -2,6 +2,7 @@
 
 ## 0.1.3 - 2026-09-03
 
+- Publish the first tagged interactive release against core version 0.1.2.
 - Read and validate the core presentation-artifact manifest.
 - Give each completed analysis its own figure and table panels.
 - Open findings at their exact figure, table, or representative structure.

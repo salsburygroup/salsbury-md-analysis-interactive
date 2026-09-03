@@ -1,0 +1,27 @@
+name: Bug report
+description: Report a reproducible viewer or packaging failure.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach unpublished molecular structures, trajectories, credentials, or cluster paths.
+  - type: input
+    id: version
+    attributes:
+      label: Interactive and core versions
+      placeholder: interactive v0.1.3; core v0.1.2
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the command, expected result, observed result, and a minimal public report fixture when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Safe diagnostic evidence
+      description: Paste a redacted traceback and browser details. Do not include private analysis results.

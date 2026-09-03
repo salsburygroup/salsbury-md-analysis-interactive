@@ -12,6 +12,8 @@
   polymer ribbons, bonded ligands and cofactors, and space-filling ions.
 - Stream visualization fields from large FES and clustering reports with
   bounded memory.
+- Use Wake Forest Old Gold and black throughout the browser, with red reserved
+  for scientific emphasis, selections, and items requiring attention.
 
 ## 0.1.1 - 2026-08-25
 

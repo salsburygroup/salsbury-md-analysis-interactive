@@ -354,6 +354,13 @@ class InteractiveReportTests(unittest.TestCase):
             )
             self.assertIn("connect-src 'none'", text)
             self.assertNotRegex(text, r'<script[^>]+src=["\']https?://')
+            for official_wake_forest_color in (
+                "--wake-black:#000", "--wake-gold:#9e7e38",
+                "--web-gold:#8c6d2c", "--athletics-gold:#ceb888",
+            ):
+                self.assertIn(official_wake_forest_color, text)
+            self.assertIn("--red:#9d2235", text)
+            self.assertNotIn("--teal:#1c7166", text)
             reused = build_interactive_report(root)
             self.assertTrue(reused["reused"])
 

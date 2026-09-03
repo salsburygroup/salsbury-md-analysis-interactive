@@ -1572,6 +1572,7 @@ def _write_portable_evidence(
         "module-coverage.json", "analysis-config.json", "preflight.report.json",
         "sampling-plan.json", "automatic-chemical-context.json",
         "conformational-views.json", "project.json", "system.json",
+        "presentation-artifacts/presentation-manifest.json",
     ):
         source = root / relative
         if not source.is_file():

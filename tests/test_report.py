@@ -422,6 +422,10 @@ class InteractiveReportTests(unittest.TestCase):
                  / "presentation-artifacts" / "free-energy"
                  / "state-populations.csv").is_file()
             )
+            self.assertTrue(
+                (root / "interactive-report" / "evidence"
+                 / "presentation-artifacts" / "presentation-manifest.json").is_file()
+            )
             data_match = re.search(
                 r'<script id="report-data" type="application/json">(.*?)</script>',
                 text,

@@ -319,6 +319,11 @@ class InteractiveReportTests(unittest.TestCase):
         (structure_root / "representative-1.pdb").write_text(
             pdb, encoding="utf-8"
         )
+        (structure_root / "trajectory.pdb").write_text(
+            "MODEL        1\n" + pdb + "ENDMDL\n"
+            "MODEL        2\n" + pdb + "ENDMDL\n",
+            encoding="utf-8",
+        )
         (cluster_structure_root / "representative-1.pdb").write_text(
             pdb, encoding="utf-8"
         )
@@ -449,6 +454,14 @@ class InteractiveReportTests(unittest.TestCase):
             self.assertEqual(
                 len(cluster_visual["representative_structures"]), 1
             )
+            self.assertTrue(all(
+                row["model_count"] == 1 and row["atoms_per_model"] == 2
+                for row in embedded["structures"]
+            ))
+            self.assertTrue(all(
+                Path(row["path"]).name != "trajectory.pdb"
+                for row in embedded["structures"]
+            ))
             fes_visuals = [
                 visual
                 for report in embedded["reports"]

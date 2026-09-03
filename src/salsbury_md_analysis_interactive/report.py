@@ -1021,6 +1021,13 @@ def _structure_records(
         *root.glob("presentation-artifacts/**/*.pdb"),
         *root.glob("*.rmsf_bfactor.pdb"),
     })
+    # State trajectories can contain dozens or hundreds of MODEL records. They
+    # remain analysis evidence, but the molecular browser is for compact
+    # representative structures rather than duplicate trajectory playback.
+    candidates = [
+        path for path in candidates
+        if path.name.lower() not in {"trajectory.pdb", "trajectory.ent"}
+    ]
     included: List[Dict[str, object]] = []
     omitted: List[Dict[str, object]] = []
     total_bytes = 0
@@ -1072,6 +1079,23 @@ def _structure_records(
             kept_lines.append(line)
         pdb_text = "".join(kept_lines)
         size = len(pdb_text.encode("utf-8"))
+        model_atom_counts: List[int] = []
+        current_model_atoms = 0
+        saw_model = False
+        for line in kept_lines:
+            record_name = line[:6].strip()
+            if record_name == "MODEL":
+                saw_model = True
+                current_model_atoms = 0
+            elif record_name in {"ATOM", "HETATM"}:
+                current_model_atoms += 1
+            elif record_name == "ENDMDL" and saw_model:
+                model_atom_counts.append(current_model_atoms)
+                current_model_atoms = 0
+        if saw_model and current_model_atoms:
+            model_atom_counts.append(current_model_atoms)
+        if not saw_model:
+            model_atom_counts = [atom_count]
         relative_parts = Path(relative).parts
         state_part = next(
             (part for part in relative_parts if re.fullmatch(r"state-\d+", part)),
@@ -1115,6 +1139,14 @@ def _structure_records(
             "source_sha256": _sha256_file(path),
             "sha256": hashlib.sha256(pdb_text.encode("utf-8")).hexdigest(),
             "atom_count": atom_count,
+            "model_count": len(model_atom_counts),
+            "atoms_per_model": (
+                model_atom_counts[0]
+                if model_atom_counts and len(set(model_atom_counts)) == 1
+                else None
+            ),
+            "minimum_atoms_per_model": min(model_atom_counts) if model_atom_counts else 0,
+            "maximum_atoms_per_model": max(model_atom_counts) if model_atom_counts else 0,
             "removed_solvent_atom_count": removed_solvent_atoms,
             "state_id": state_part,
             "system_id": system_part,
@@ -2061,7 +2093,7 @@ function searchSelection(){const q=$('#viewer-search').value.trim();if(!q)return
 function applyMolecularStyle(){if(!molecular.viewer||!molecular.model)return;const rep=$('#viewer-representation').value,scheme=colorScheme(),showH=$('#viewer-h').checked,ions=[...ionElements];molecular.viewer.setStyle({},{});if(rep==='all')molecular.viewer.setStyle({},{stick:{radius:.18,colorscheme:scheme}});if(rep==='overview'||rep==='backbone')molecular.viewer.setStyle({hetflag:false},{cartoon:{style:'rectangle',arrows:true,tubes:false,thickness:.4,colorscheme:scheme}});if(rep==='overview'||rep==='hetero')molecular.viewer.setStyle({hetflag:true},{stick:{radius:.24,colorscheme:scheme}});ions.forEach(elem=>molecular.viewer.setStyle({elem},{sphere:{scale:.55,colorscheme:'Jmol'}}));if(!showH)molecular.viewer.setStyle({elem:'H'},{});const selection=searchSelection();if(selection){molecular.viewer.addStyle(selection,{stick:{radius:.36,color:'#fdc314'},sphere:{scale:.35,color:'#fdc314'}});molecular.viewer.zoomTo(selection)}molecular.viewer.render();const count=molecular.viewer.selectedAtoms({}).filter(a=>showH||String(a.elem).toUpperCase()!=='H').length;$('#viewer-info').textContent=`${count.toLocaleString()} non-solvent atoms · true molecular cartoon · bonded ligands/cofactors · space-filling ions · drag to rotate, scroll to zoom`}
 function loadStructure(index){const s=DATA.structures[index];if(!s||!molecular.viewer)return;molecular.index=index;molecular.viewer.removeAllModels();molecular.model=molecular.viewer.addModel(s.pdb_text,'pdb',{keepH:true});molecular.viewer.setClickable({},true,(atom)=>{$('#viewer-info').textContent=`${atom.chain||'_'}:${atom.resn}${atom.resi}:${atom.atom} · ${atom.elem} · B ${Number(atom.b||0).toFixed(2)}`});$('#structure-title').textContent=cleanLabel(s.name);$$('.structure-item').forEach((e,i)=>e.classList.toggle('active',i===index));applyMolecularStyle();molecular.viewer.zoomTo();molecular.viewer.render()}
 function openStructure(structureId){const index=DATA.structures.findIndex(s=>s.structure_id===structureId);if(index<0)return;go('molecules');loadStructure(index)}
-function renderMolecules(){const list=$('#structure-list');list.innerHTML=DATA.structures.map((s,i)=>`<div class="structure-item" data-index="${i}"><strong>${esc(cleanLabel(s.name))}</strong><small>${esc(s.system_id||moduleName(s.module_id)||'Representative structure')} · ${fmt(s.atom_count)} atoms · <a href="${esc(s.href)}" target="_blank">Open PDB</a></small></div>`).join('')||'<div class="empty">No PDB representative structures were found.</div>';$$('.structure-item',list).forEach(e=>e.addEventListener('click',ev=>{if(ev.target.tagName!=='A')loadStructure(+e.dataset.index)}));if(typeof $3Dmol==='undefined'){$('#viewer-info').textContent='The embedded molecular renderer could not be loaded.';return}molecular.viewer=$3Dmol.createViewer($('#molecule-viewer'),{backgroundColor:'#000000',antialias:true});['viewer-representation','viewer-color','viewer-h'].forEach(id=>{const control=$(`#${id}`);control.addEventListener('change',applyMolecularStyle)});$('#viewer-search').addEventListener('change',applyMolecularStyle);$('#viewer-reset').addEventListener('click',()=>loadStructure(molecular.index));if(DATA.structures.length)loadStructure(0);if('ResizeObserver' in window)new ResizeObserver(()=>{molecular.viewer.resize();molecular.viewer.render()}).observe($('#molecule-viewer'))}
+function renderMolecules(){const list=$('#structure-list'),structureSize=s=>s.model_count>1?`${fmt(s.atoms_per_model??s.minimum_atoms_per_model)}${s.atoms_per_model?'':'–'+fmt(s.maximum_atoms_per_model)} atoms per frame · ${fmt(s.model_count)} frames`:`${fmt(s.atom_count)} atoms`;list.innerHTML=DATA.structures.map((s,i)=>`<div class="structure-item" data-index="${i}"><strong>${esc(cleanLabel(s.name))}</strong><small>${esc(s.system_id||moduleName(s.module_id)||'Representative structure')} · ${structureSize(s)} · <a href="${esc(s.href)}" target="_blank">Open PDB</a></small></div>`).join('')||'<div class="empty">No PDB representative structures were found.</div>';$$('.structure-item',list).forEach(e=>e.addEventListener('click',ev=>{if(ev.target.tagName!=='A')loadStructure(+e.dataset.index)}));if(typeof $3Dmol==='undefined'){$('#viewer-info').textContent='The embedded molecular renderer could not be loaded.';return}molecular.viewer=$3Dmol.createViewer($('#molecule-viewer'),{backgroundColor:'#000000',antialias:true});['viewer-representation','viewer-color','viewer-h'].forEach(id=>{const control=$(`#${id}`);control.addEventListener('change',applyMolecularStyle)});$('#viewer-search').addEventListener('change',applyMolecularStyle);$('#viewer-reset').addEventListener('click',()=>loadStructure(molecular.index));if(DATA.structures.length)loadStructure(0);if('ResizeObserver' in window)new ResizeObserver(()=>{molecular.viewer.resize();molecular.viewer.render()}).observe($('#molecule-viewer'))}
 renderAnalysisTabs();renderOverview();renderFindings();renderModules();renderAccounting();renderVisuals();renderFigures();renderResources();renderQC();renderMolecules();go((location.hash||'#overview').slice(1));
 """
 

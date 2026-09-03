@@ -460,8 +460,12 @@ class InteractiveReportTests(unittest.TestCase):
                     len(visual["representative_structures"])
                     for visual in fes_visuals
                 ],
-                [0, 1],
+                [1],
             )
+            self.assertEqual(
+                fes_visuals[0]["smoothing_sigma_bins"], 1.0
+            )
+            self.assertIn("artifactOrder", text)
             self.assertIn("connect-src 'none'", text)
             self.assertNotRegex(text, r'<script[^>]+src=["\']https?://')
             for official_wake_forest_color in (

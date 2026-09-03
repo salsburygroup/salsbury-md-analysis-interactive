@@ -119,15 +119,20 @@ external service, or download JavaScript after it opens.
 
 ## 6. Read the report
 
-Read the QC panel first. Then review the prioritized findings, FES and
-clustering views, representative zinc-finger structures, and the resources and
-sampling table. The **All analyses** section keeps every completed module in
-view, including reports that the automatic picker did not rank near the top.
+Read the prioritized findings, then open their linked analysis tabs, figures,
+or representative structures. The molecular-states tab places the FES first
+and orders clustering methods by silhouette score. Its population tables show
+how the NEMO frames are distributed across clusters. The structure viewer keeps
+the protein and zinc ion while excluding solvent.
 
-The automatic ranking helps you decide where to look. It does not establish
-convergence, causality, mechanism, biological importance, statistical
-significance, or scientific validity. Open the linked source report whenever a
-finding needs its full settings, warnings, frame selection, or provenance.
+QC has its own tab. Clustering review notes remain under Clustering rather than
+appearing as structural QC. Use the separate analysis tabs to move through
+RMSD/Rg, RMSF, SASA, ions, correlations, and the other completed analyses. The
+**All reports** tab is the complete index.
+
+The `interactive-report/evidence/` directory contains the JSON, PDB, and figure
+files opened by report links. Move or zip the whole `interactive-report/`
+directory so those links remain intact.
 
 ## Rebuild with different viewer limits
 

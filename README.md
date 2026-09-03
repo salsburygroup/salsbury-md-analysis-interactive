@@ -50,13 +50,23 @@ Generation is immutable. If an interactive report already exists, its manifest
 and HTML checksum must validate before it is reused. Changed or partial output
 fails closed instead of being overwritten.
 
-## What is highlighted
+## What the report shows
 
-The browser shows the picker’s prioritized findings first and retains the
-remaining modules. Every completed module is accounted for as a ranked
-candidate, QC result, technical support, interpretive context, or a reviewed
-result without an automatic highlight. QC records remain separate from the
-scientific ranking.
+The browser opens with the picker’s prioritized findings. A finding links to
+its analysis tab and, when available, to a figure or representative structure.
+Free-energy surfaces come first in the molecular-states view. Clustering
+methods follow from highest to lowest silhouette score, with each method named,
+each system’s cluster populations tabulated, and exported cluster structures
+shown beside the result.
+
+Each analysis class has its own tab. QC errors and warnings stay in the QC tab;
+review notes from clustering or another scientific method stay with that
+method. Internal view identifiers are replaced by readable names.
+
+The molecular viewer packages complete non-solvent structures. Its bundled
+3Dmol.js renderer draws polymers as a NewCartoon-style ribbon, ligands and
+cofactors as bonded atoms, and ions as space-filling spheres. The underlying
+PDB remains available beside the viewer.
 
 The opening page shows 10–12 headline findings. Ten are always shown; the
 picker adds an eleventh or twelfth only when supported statistical significance
@@ -64,9 +74,9 @@ reaches that ranking boundary. Secondary findings bring the highlighted total
 to 50 when enough candidates exist. Every other candidate remains available in
 the searchable browser and the core JSON and CSV files.
 
-Automated ranking is a navigation aid. It does not establish convergence,
-causality, mechanism, biological importance, statistical significance, or
-scientific validity.
+The report copies the JSON, PDB, and figure files needed by its links into an
+`evidence/` directory. The result remains portable when the whole
+`interactive-report/` directory is moved or zipped.
 
 See [the detailed viewer guide](docs/INTERACTIVE_REPORT.md) and
 [the NEMO zinc-finger walkthrough](tutorials/nemo_zinc_finger/README.md). See

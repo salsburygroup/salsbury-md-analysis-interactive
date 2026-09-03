@@ -3,4 +3,6 @@ recursive-include docs *.md
 recursive-include tutorials *.md
 recursive-include tests *.py
 recursive-include validation *.json
+recursive-include src/salsbury_md_analysis_interactive/vendor *.js
+recursive-include third_party *.txt
 global-exclude __pycache__ *.py[cod] .DS_Store

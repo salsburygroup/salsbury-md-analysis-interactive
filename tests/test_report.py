@@ -466,6 +466,8 @@ class InteractiveReportTests(unittest.TestCase):
                 fes_visuals[0]["smoothing_sigma_bins"], 1.0
             )
             self.assertIn("artifactOrder", text)
+            self.assertIn("stateArtifactOrder", text)
+            self.assertIn("State populations and comparison figures", text)
             self.assertIn("connect-src 'none'", text)
             self.assertNotRegex(text, r'<script[^>]+src=["\']https?://')
             for official_wake_forest_color in (

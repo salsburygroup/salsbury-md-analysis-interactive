@@ -9,6 +9,7 @@ of record and are linked rather than rewritten.
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import html
 import json
@@ -37,8 +38,10 @@ _MAXIMUM_PORTABLE_REPORT_BYTES = 5_000_000
 _MAXIMUM_PORTABLE_EVIDENCE_BYTES = 100_000_000
 _MAXIMUM_STREAMED_VISUAL_ROWS = 500_000
 _GENERATOR_PACKAGE = "salsbury-md-analysis-interactive"
-_GENERATOR_VERSION = "0.1.2"
+_GENERATOR_VERSION = "0.1.3"
 _THREEDMOL_PATH = Path(__file__).with_name("vendor") / "3Dmol-min.js"
+_PRESENTATION_MANIFEST_SCHEMA = "salsbury-presentation-artifacts-v1"
+_MAXIMUM_TABLE_PREVIEW_ROWS = 200
 
 _MODULE_LABELS = {
     "alternative_clustering": "Alternative clustering methods",
@@ -174,6 +177,33 @@ _ANALYSIS_CLASSES = {
     "random_feature_koopman": ("kinetics", "Kinetics and state models"),
     "reactive_path_ensembles": ("kinetics", "Kinetics and state models"),
     "structural_integrity_qc": ("qc", "Quality control"),
+}
+
+_PRESENTATION_ANALYSIS_CLASSES = {
+    "quality_control": ("qc", "Quality control"),
+    "technical_support": ("preparation", "Coordinate preparation"),
+    "comparisons": ("comparisons", "System comparisons"),
+    "free_energy_surfaces": ("free-energy", "Free-energy surfaces"),
+    "conformational_ensembles": ("free-energy", "Conformational ensembles"),
+    "structural_dynamics": ("rmsd-rg", "Structural dynamics"),
+    "rmsd_and_radius_of_gyration": (
+        "rmsd-rg", "RMSD and radius of gyration"
+    ),
+    "rmsf": ("rmsf", "Root-mean-square fluctuations"),
+    "coupled_interactions": ("correlations", "Correlations and networks"),
+    "hydrogen_bonds": ("hydrogen-bonds", "Hydrogen bonds"),
+    "solvent_exposure": ("sasa", "Solvent exposure"),
+    "secondary_structure": ("local-structure", "Secondary structure"),
+    "internal_coordinates": ("local-structure", "Internal coordinates"),
+    "nucleic_acid_structure": ("dna", "Nucleic-acid structure"),
+    "ions_and_solvation": ("ions", "Ions and solvation"),
+    "feature_distributions": ("distributions", "Feature distributions"),
+    "molecular_states": ("clustering", "Molecular states"),
+    "clustering": ("clustering", "Clustering"),
+    "kinetic_models": ("kinetics", "Kinetics and state models"),
+    "machine_learning": ("comparisons", "Machine learning"),
+    "other_observables": ("other", "Other analyses"),
+    "other_analyses": ("other", "Other analyses"),
 }
 
 _QC_MODULES = {
@@ -977,6 +1007,7 @@ def _structure_records(
     candidates = sorted({
         *root.glob("results/**/*.pdb"),
         *root.glob("results/**/*.ent"),
+        *root.glob("presentation-artifacts/**/*.pdb"),
         *root.glob("*.rmsf_bfactor.pdb"),
     })
     included: List[Dict[str, object]] = []
@@ -1127,6 +1158,203 @@ def _figure_records(
     return included, omitted
 
 
+def _presentation_analysis_class(value: object, module_id: object) -> tuple[str, str]:
+    key = str(value or "")
+    if key in _PRESENTATION_ANALYSIS_CLASSES:
+        return _PRESENTATION_ANALYSIS_CLASSES[key]
+    return _analysis_class(module_id)
+
+
+def _csv_preview(path: Path) -> Dict[str, object]:
+    """Read a bounded, human-facing preview without changing the source table."""
+
+    rows: List[Dict[str, str]] = []
+    truncated = False
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        columns = list(reader.fieldnames or [])
+        for index, row in enumerate(reader):
+            if index >= _MAXIMUM_TABLE_PREVIEW_ROWS:
+                truncated = True
+                break
+            rows.append({str(key): str(value or "") for key, value in row.items()})
+    return {
+        "columns": columns,
+        "rows": rows,
+        "preview_row_count": len(rows),
+        "preview_truncated": truncated,
+    }
+
+
+def _presentation_records(
+    root: Path,
+    *,
+    maximum_inline_figure_bytes: int,
+) -> tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+    """Validate and index the core package's exact human-presentation outputs."""
+
+    manifest_path = root / "presentation-artifacts" / "presentation-manifest.json"
+    if not manifest_path.is_file():
+        return [], []
+    manifest = _load_json(manifest_path)
+    if not isinstance(manifest, dict):
+        raise InteractiveReportError("presentation manifest is not a JSON object")
+    if manifest.get("presentation_manifest_schema") != _PRESENTATION_MANIFEST_SCHEMA:
+        raise InteractiveReportError("unsupported presentation manifest schema")
+    if manifest.get("technical_status") != "complete":
+        raise InteractiveReportError("presentation manifest is not technically complete")
+    if int(manifest.get("unadapted_report_count", 0) or 0) != 0:
+        raise InteractiveReportError(
+            "presentation manifest leaves completed reports without human artifacts"
+        )
+    raw_records = manifest.get("artifacts")
+    if not isinstance(raw_records, list):
+        raise InteractiveReportError("presentation manifest has no artifact records")
+    if manifest.get("artifact_count") != len(raw_records):
+        raise InteractiveReportError("presentation manifest artifact count is inconsistent")
+
+    records: List[Dict[str, object]] = []
+    omitted_figures: List[Dict[str, object]] = []
+    inline_figure_bytes = 0
+    seen_ids = set()
+    for index, raw in enumerate(raw_records):
+        if not isinstance(raw, dict):
+            raise InteractiveReportError(f"presentation artifact {index} is not an object")
+        artifact_id = str(raw.get("artifact_id", ""))
+        if not artifact_id or artifact_id in seen_ids:
+            raise InteractiveReportError(
+                f"presentation artifact has an absent or duplicate ID: {artifact_id!r}"
+            )
+        seen_ids.add(artifact_id)
+        relative = Path(str(raw.get("relative_path", "")))
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            raise InteractiveReportError(
+                f"presentation artifact {artifact_id} has an unsafe path"
+            )
+        source = manifest_path.parent / relative
+        if not source.is_file():
+            raise InteractiveReportError(
+                f"presentation artifact {artifact_id} is absent: {source}"
+            )
+        expected_hash = str(raw.get("artifact_sha256", ""))
+        observed_hash = _sha256_file(source)
+        if expected_hash != observed_hash:
+            raise InteractiveReportError(
+                f"presentation artifact {artifact_id} failed its checksum"
+            )
+        if raw.get("artifact_size_bytes") != source.stat().st_size:
+            raise InteractiveReportError(
+                f"presentation artifact {artifact_id} failed its byte-count check"
+            )
+        artifact_type = str(raw.get("artifact_type", ""))
+        if artifact_type not in {"figure", "table", "structure"}:
+            raise InteractiveReportError(
+                f"presentation artifact {artifact_id} has an unsupported type"
+            )
+        module_id = str(raw.get("module_id", "other"))
+        class_id, class_title = _presentation_analysis_class(
+            raw.get("analysis_class"), module_id
+        )
+        record = {
+            **raw,
+            "artifact_id": artifact_id,
+            "artifact_type": artifact_type,
+            "module_id": module_id,
+            "analysis_class_id": class_id,
+            "analysis_class_title": class_title,
+            "source_path": "presentation-artifacts/" + relative.as_posix(),
+            "href": _portable_href(
+                "presentation-artifacts/" + relative.as_posix()
+            ),
+        }
+        if artifact_type == "figure":
+            media_type = str(raw.get("media_type") or _IMAGE_MEDIA_TYPES.get(
+                source.suffix.lower(), "application/octet-stream"
+            ))
+            record["media_type"] = media_type
+            if inline_figure_bytes + source.stat().st_size <= maximum_inline_figure_bytes:
+                record["data_uri"] = (
+                    f"{media_type};base64,"
+                    + base64.b64encode(source.read_bytes()).decode("ascii")
+                )
+                inline_figure_bytes += source.stat().st_size
+            else:
+                omitted_figures.append({
+                    **record,
+                    "reason": "interactive inline-asset limit",
+                })
+        elif artifact_type == "table" and source.suffix.lower() == ".csv":
+            record["table_preview"] = _csv_preview(source)
+        records.append(record)
+    return records, omitted_figures
+
+
+def _finding_artifact_links(
+    finding: Mapping[str, object],
+    artifacts: Sequence[Mapping[str, object]],
+) -> List[Dict[str, object]]:
+    """Resolve a picker target to exact portable artifacts, preserving order."""
+
+    by_id = {
+        str(row.get("artifact_id")): row
+        for row in artifacts if isinstance(row.get("artifact_id"), str)
+    }
+    declared = finding.get("presentation_artifacts")
+    matched: List[Mapping[str, object]] = []
+    if isinstance(declared, list):
+        for item in declared:
+            artifact_id = (
+                str(item.get("artifact_id", "")) if isinstance(item, dict)
+                else str(item)
+            )
+            if artifact_id and artifact_id not in by_id:
+                raise InteractiveReportError(
+                    f"finding references absent presentation artifact {artifact_id}"
+                )
+            if artifact_id:
+                matched.append(by_id[artifact_id])
+    if not matched:
+        target = finding.get("presentation_target")
+        if isinstance(target, dict):
+            module_id = str(target.get("module_id", ""))
+            purpose = str(target.get("purpose", ""))
+            context = target.get("context")
+            required_context = context if isinstance(context, dict) else {}
+            preferred = target.get("preferred_artifact_types")
+            preferred_types = (
+                [str(value) for value in preferred]
+                if isinstance(preferred, list) else ["figure", "table", "structure"]
+            )
+            candidates = [
+                row for row in artifacts
+                if str(row.get("module_id", "")) == module_id
+                and str(row.get("purpose", "")) == purpose
+                and all(
+                    row.get("context", {}).get(key) == value
+                    for key, value in required_context.items()
+                )
+            ]
+            matched = sorted(
+                candidates,
+                key=lambda row: (
+                    preferred_types.index(str(row.get("artifact_type")))
+                    if str(row.get("artifact_type")) in preferred_types else 99,
+                    str(row.get("artifact_id")),
+                ),
+            )
+    return [
+        {
+            key: row.get(key)
+            for key in (
+                "artifact_id", "artifact_type", "title", "href", "module_id",
+                "analysis_class_id", "analysis_class_title", "purpose", "context",
+                "structure_id",
+            )
+        }
+        for row in matched
+    ]
+
+
 def _attach_visual_assets(
     reports: Sequence[Mapping[str, object]],
     structures: Sequence[Mapping[str, object]],
@@ -1246,6 +1474,8 @@ def _write_portable_evidence(
     for structure in structures if isinstance(structures, list) else []:
         if not isinstance(structure, dict):
             continue
+        if structure.get("artifact_id"):
+            continue
         destination = target / str(structure["href"])
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(str(structure["pdb_text"]), encoding="utf-8")
@@ -1262,6 +1492,8 @@ def _write_portable_evidence(
     for figure in figures if isinstance(figures, list) else []:
         if not isinstance(figure, dict):
             continue
+        if figure.get("artifact_id"):
+            continue
         destination = target / str(figure["href"])
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / str(figure["path"]), destination)
@@ -1272,6 +1504,24 @@ def _write_portable_evidence(
             "evidence_kind": "figure",
             "source_path": figure["path"],
             "source_sha256": figure.get("sha256"),
+        })
+
+    artifacts = data.get("presentation_artifacts", [])
+    for artifact in artifacts if isinstance(artifacts, list) else []:
+        if not isinstance(artifact, dict):
+            continue
+        source = root / str(artifact["source_path"])
+        destination = target / str(artifact["href"])
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+        records.append({
+            "path": artifact["href"],
+            "sha256": _sha256_file(destination),
+            "size_bytes": destination.stat().st_size,
+            "evidence_kind": f"presentation_{artifact['artifact_type']}",
+            "artifact_id": artifact.get("artifact_id"),
+            "source_path": artifact["source_path"],
+            "source_sha256": artifact.get("artifact_sha256"),
         })
 
     for relative in (
@@ -1405,14 +1655,74 @@ def _collect_data(
         _report_record(path, root)
         for path in sorted((root / "results").glob("**/report.json"))
     ] if (root / "results").is_dir() else []
+    presentation_artifacts, omitted_presentation_figures = _presentation_records(
+        root, maximum_inline_figure_bytes=maximum_inline_figure_bytes
+    )
+    presentation_class_by_module = {
+        str(row.get("module_id")): (
+            str(row.get("analysis_class_id")),
+            str(row.get("analysis_class_title")),
+        )
+        for row in presentation_artifacts
+    }
+    for report in reports:
+        presentation_class = presentation_class_by_module.get(
+            str(report.get("module_id"))
+        )
+        if presentation_class:
+            report["analysis_class_id"], report["analysis_class_title"] = (
+                presentation_class
+            )
+    used_presentation_figure_bytes = sum(
+        int(row.get("artifact_size_bytes", 0) or 0)
+        for row in presentation_artifacts
+        if row.get("artifact_type") == "figure" and "data_uri" in row
+    )
     structures, omitted_structures = _structure_records(
         root,
         maximum_structures=maximum_inline_structures,
         maximum_total_bytes=maximum_inline_structure_bytes,
     )
+    presentation_by_source = {
+        str(row.get("source_path")): row for row in presentation_artifacts
+    }
+    for structure in [*structures, *omitted_structures]:
+        presentation = presentation_by_source.get(str(structure.get("path")))
+        if not presentation:
+            continue
+        structure.update({
+            "artifact_id": presentation.get("artifact_id"),
+            "module_id": presentation.get("module_id"),
+            "method_id": presentation.get("module_id"),
+            "analysis_class_id": presentation.get("analysis_class_id"),
+            "analysis_class_title": presentation.get("analysis_class_title"),
+            "purpose": presentation.get("purpose"),
+            "context": presentation.get("context", {}),
+            "system_id": presentation.get("context", {}).get(
+                "system_id", structure.get("system_id")
+            ),
+            "state_id": presentation.get("context", {}).get(
+                "state_id", structure.get("state_id")
+            ),
+            "state_conditioned_stable_ion_count": presentation.get(
+                "context", {}
+            ).get("state_conditioned_stable_ion_count"),
+        })
+        presentation["structure_id"] = structure.get("structure_id")
     figures, omitted_figures = _figure_records(
-        root, maximum_total_bytes=maximum_inline_figure_bytes
+        root,
+        maximum_total_bytes=max(
+            0, maximum_inline_figure_bytes - used_presentation_figure_bytes
+        ),
     )
+    figures.extend(
+        row for row in presentation_artifacts
+        if row.get("artifact_type") == "figure" and "data_uri" in row
+    )
+    omitted_figures.extend(omitted_presentation_figures)
+    presentation_tables = [
+        row for row in presentation_artifacts if row.get("artifact_type") == "table"
+    ]
     _attach_visual_assets(reports, structures)
     qc_issues: List[Dict[str, object]] = []
     if isinstance(preflight, dict):
@@ -1474,6 +1784,13 @@ def _collect_data(
         )
         headline_rows = highlighted_finding_rows[:headline_count]
         secondary_rows = highlighted_finding_rows[headline_count:]
+    for rows in (
+        finding_rows, highlighted_finding_rows, headline_rows, secondary_rows
+    ):
+        for row in rows:
+            row["resolved_presentation_artifacts"] = _finding_artifact_links(
+                row, presentation_artifacts
+            )
     for index, row in enumerate(finding_rows):
         if row.get("presentation_tier"):
             continue
@@ -1526,6 +1843,13 @@ def _collect_data(
             continue
         analysis_classes_by_id[class_id] = str(
             report.get("analysis_class_title", "Other analyses")
+        )
+    for artifact in presentation_artifacts:
+        class_id = str(artifact.get("analysis_class_id", "other"))
+        if class_id == "qc":
+            continue
+        analysis_classes_by_id[class_id] = str(
+            artifact.get("analysis_class_title", "Other analyses")
         )
     preferred_class_order = [
         "free-energy", "clustering", "rmsd-rg", "rmsf", "sasa",
@@ -1584,6 +1908,8 @@ def _collect_data(
             "descriptive": "observational",
         },
         "reports": reports,
+        "presentation_artifacts": presentation_artifacts,
+        "presentation_tables": presentation_tables,
         "resources": resource_rows,
         "resource_metadata": _preview(resources) if isinstance(resources, dict) else None,
         "qc_issues": qc_issues,
@@ -1608,6 +1934,9 @@ def _collect_data(
                 "Resolved configuration": "analysis-config.json",
                 "Preflight report": "preflight.report.json",
                 "Sampling plan": "sampling-plan.json",
+                "Presentation artifact manifest": (
+                    "presentation-artifacts/presentation-manifest.json"
+                ),
             }.items()
             if (root / relative).is_file()
         },
@@ -1627,6 +1956,7 @@ _CSS = r"""
 .representative-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,220px));gap:10px;width:100%}.representative-card{padding:0;border:1px solid var(--line);background:#fff;border-radius:10px;overflow:hidden;text-align:left;color:var(--ink);cursor:pointer}.representative-card:hover{border-color:var(--wake-gold);box-shadow:0 4px 14px rgba(34,34,34,.14)}.representative-card canvas{display:block;width:100%;height:auto}.representative-card span{display:block;padding:7px 9px;font-size:11px}
 .molecule-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(250px,.7fr);gap:16px}.viewer{background:var(--wake-black);border-radius:15px;overflow:hidden;position:relative;min-height:520px;border-top:4px solid var(--wake-gold)}.molecule-viewer{width:100%;height:520px;position:relative}.molecule-viewer canvas{cursor:grab}.molecule-viewer canvas:active{cursor:grabbing}.viewer-tools{display:flex;gap:7px;flex-wrap:wrap;padding:10px;background:#222}.viewer-tools select,.viewer-tools input,.viewer-tools button{background:#f6f2e9;border:0;border-radius:7px;padding:7px}.viewer-info{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.72);color:#fff;padding:8px 10px;border-radius:7px;font-size:12px;max-width:85%;z-index:5;pointer-events:none}.structure-list{max-height:585px;overflow:auto}.structure-item{padding:9px;border-bottom:1px solid var(--line);cursor:pointer}.structure-item.active{background:var(--pale-gold);border-left:4px solid var(--red)}.structure-item small{display:block;color:var(--muted)}
 .table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}th{position:sticky;top:0;background:var(--pale-gold)}.figure img{max-width:100%;height:auto;border-radius:10px}.empty{padding:30px;text-align:center;border:1px dashed var(--athletics-gold);border-radius:12px;color:var(--muted)}
+.presentation-artifact{scroll-margin-top:18px;border-top:3px solid var(--athletics-gold);padding-top:12px;margin:0 0 20px}.presentation-artifact:target{outline:3px solid var(--red)}.artifact-stack .presentation-artifact{border-bottom:1px solid var(--line);padding-bottom:14px}.artifact-stack .presentation-artifact:last-child{border-bottom:0}.table-artifact .table-wrap{max-height:430px;border:1px solid var(--line);border-radius:8px}
 @media(max-width:850px){.shell{display:block}.sidebar{position:static;height:auto}.nav{display:flex;overflow:auto}.nav button{width:auto;white-space:nowrap}.sidebar .boundary{display:none}.main{padding:22px 15px}.molecule-layout{grid-template-columns:1fr}.topline{display:block}.status{display:inline-block;margin-top:12px}}
 @media print{.sidebar,.filters,.viewer-tools{display:none!important}.shell{display:block}.main{padding:0}.view{display:block!important;break-before:page}.card{box-shadow:none;break-inside:avoid}}
 """
@@ -1647,8 +1977,9 @@ function badge(text,cls=''){return `<span class="badge ${cls}">${esc(text)}</spa
 function reportForFinding(f){const p=String(f.report_path||'').replace(/^.*?results\//,'results/');return DATA.reports.find(r=>r.path===p)||DATA.reports.find(r=>r.module_id===f.module_id)}
 function structureForModule(moduleId){return DATA.structures.find(s=>s.method_id===moduleId||s.module_id===moduleId)||null}
 function figuresForModule(moduleId){const report=DATA.reports.find(r=>r.module_id===moduleId),classId=report?.analysis_class_id;return DATA.figures.filter(f=>f.module_id===moduleId||(classId&&f.analysis_class_id===classId)).slice(0,3)}
-function findingActions(f){const r=reportForFinding(f),parts=[];if(r){const target=['pca_fes_basins','clustering_kmeans','clustering_imwkmeans','alternative_clustering','representative_frames','state_coordinate_exports'].includes(r.module_id)?'states':`analysis-${r.analysis_class_id}`;parts.push(`<button class="inline-link" data-report-view="${esc(target)}">View ${esc(target==='states'?'molecular states':r.analysis_class_title||'analysis')}</button>`)}const s=structureForModule(f.module_id);if(s)parts.push(`<button class="inline-link" data-structure-id="${esc(s.structure_id)}">Representative structure</button>`);figuresForModule(f.module_id).forEach((figure,index)=>parts.push(`<a class="inline-link" href="${esc(figure.href)}" target="_blank">${index?'Another figure':'View figure'}</a>`));return parts.join('')}
-function wireActions(host){$$('[data-report-view]',host).forEach(b=>b.onclick=()=>go(b.dataset.reportView));$$('[data-structure-id]',host).forEach(b=>b.onclick=()=>openStructure(b.dataset.structureId))}
+function findingActions(f){const r=reportForFinding(f),parts=[],exact=f.resolved_presentation_artifacts||[];if(r){const target=['pca_fes_basins','clustering_kmeans','clustering_imwkmeans','alternative_clustering','representative_frames','state_coordinate_exports'].includes(r.module_id)?'states':`analysis-${r.analysis_class_id}`;parts.push(`<button class="inline-link" data-report-view="${esc(target)}">View ${esc(target==='states'?'molecular states':r.analysis_class_title||'analysis')}</button>`)}exact.forEach(a=>{if(a.artifact_type==='structure'&&a.structure_id)parts.push(`<button class="inline-link" data-structure-id="${esc(a.structure_id)}">View representative structure</button>`);else parts.push(`<button class="inline-link" data-artifact-id="${esc(a.artifact_id)}">View ${esc(a.artifact_type)}</button>`)});if(!exact.length){const s=structureForModule(f.module_id);if(s)parts.push(`<button class="inline-link" data-structure-id="${esc(s.structure_id)}">Representative structure</button>`);figuresForModule(f.module_id).forEach((figure,index)=>parts.push(`<a class="inline-link" href="${esc(figure.href)}" target="_blank">${index?'Another figure':'View figure'}</a>`))}return parts.join('')}
+function openArtifact(artifactId){const a=(DATA.presentation_artifacts||[]).find(row=>row.artifact_id===artifactId);if(!a)return;if(a.artifact_type==='structure'&&a.structure_id){openStructure(a.structure_id);return}go(a.analysis_class_id==='qc'?'qc':`analysis-${a.analysis_class_id}`);requestAnimationFrame(()=>document.getElementById(`artifact-${artifactId}`)?.scrollIntoView({behavior:'smooth',block:'start'}))}
+function wireActions(host){$$('[data-report-view]',host).forEach(b=>b.onclick=()=>go(b.dataset.reportView));$$('[data-structure-id]',host).forEach(b=>b.onclick=()=>openStructure(b.dataset.structureId));$$('[data-artifact-id]',host).forEach(b=>b.onclick=()=>openArtifact(b.dataset.artifactId))}
 function findingHTML(f,i){const tier=f.presentation_tier||'headline',sig=f.statistically_significant===true?badge('statistically significant after correction','sig'):'';return `<div class="finding" data-category="${esc(f.category)}" data-systems="${esc((f.system_ids||[]).join(' '))}" data-tier="${esc(tier)}" data-search="${esc(JSON.stringify(f).toLowerCase())}"><div class="rank">${esc(String(f.finding_id||i+1).replace('finding-','').replace(/^0+/,''))}</div><div><div>${esc(humanizeText(f.statement))}</div><div class="badges">${badge(tier.replaceAll('_',' '))}${badge(cleanLabel(f.category))}${badge(moduleName(f.module_id))}${sig}${(f.system_ids||[]).map(s=>badge(cleanLabel(s))).join('')}</div><div class="finding-footer"><span>Effect: ${fmt(f.effect_value)}</span>${findingActions(f)}</div></div></div>`}
 function renderFindings(){const host=$('#findings-list');host.innerHTML=DATA.findings.length?DATA.findings.map(findingHTML).join(''):'<div class="empty">No ranked findings were generated.</div>';wireActions(host);const cats=[...new Set(DATA.findings.map(f=>f.category))].sort();const systems=[...new Set(DATA.findings.flatMap(f=>f.system_ids||[]))].sort();$('#finding-category').innerHTML='<option value="">All categories</option>'+cats.map(v=>`<option>${esc(cleanLabel(v))}</option>`).join('');$('#finding-system').innerHTML='<option value="">All systems</option>'+systems.map(v=>`<option>${esc(v)}</option>`).join('');const tier=$('#finding-tier');tier.innerHTML=`<option value="headline">Headline (${DATA.headline_findings.length})</option><option value="secondary">Secondary (${DATA.secondary_findings.length})</option><option value="additional_candidate">Additional candidates (${Math.max(0,DATA.findings.length-DATA.highlighted_findings.length)})</option><option value="">All candidates (${DATA.findings.length})</option>`;const filter=()=>{const q=$('#finding-search').value.toLowerCase(),c=$('#finding-category').value,s=$('#finding-system').value,t=tier.value;let shown=0;$$('.finding',host).forEach(row=>{row.hidden=!!((q&&!row.dataset.search.includes(q))||(c&&cleanLabel(row.dataset.category)!==c)||(s&&!row.dataset.systems.split(' ').includes(s))||(t&&row.dataset.tier!==t));if(!row.hidden)shown+=1});$('#finding-summary').textContent=`Showing ${shown} of ${DATA.findings.length} ranked candidates.`};['finding-search','finding-category','finding-system','finding-tier'].forEach(id=>$(`#${id}`).oninput=filter);filter()}
 function issueHTML(i){const sev=String(i.severity||'info').toLowerCase(),source=String(i.source||'').includes('results/')?'Analysis report':cleanLabel(i.source||'');return `<div class="issue ${esc(sev)}"><strong>${esc(sev.toUpperCase())}</strong> ${i.code?`<code>${esc(i.code)}</code>`:''}<div>${esc(humanizeText(i.message||i.reason||JSON.stringify(i)))}</div><small class="muted">${esc(moduleName(i.module_id)||'')} ${esc(source)} ${esc(cleanLabel(i.location||''))}</small></div>`}
@@ -1698,10 +2029,12 @@ function renderDCCM(v,host){const m=v.matrix||[],n=m.length;if(!n){host.innerHTM
 function allVisuals(){return DATA.reports.flatMap(r=>(r.visuals||[]).map(v=>({...v,module_id:r.module_id,analysis_class_id:r.analysis_class_id,context:v.context||r.context})))}
 function drawVisualCard(v,host,rank=null){const card=document.createElement('section');card.className='card';const heading=rank?`${rank}. ${v.method_name||v.title}`:v.title;card.innerHTML=`<h3>${esc(cleanLabel(heading))}</h3><div class="chart"></div>`;host.appendChild(card);const target=$('.chart',card);target.className='';if(v.kind==='fes')renderFES(v,target);else if(v.kind==='cluster_populations')renderClusters(v,target);else if(v.kind==='rmsf')renderRMSF(v,target);else if(v.kind==='dccm')renderDCCM(v,target)}
 function renderVisuals(){const visuals=allVisuals().filter(v=>['fes','cluster_populations'].includes(v.kind));const select=$('#visual-kind');select.innerHTML='<option value="">FES followed by clustering</option><option value="fes">Free-energy surfaces</option><option value="cluster_populations">Clustering, best silhouette first</option>';function draw(){const host=$('#visual-list'),kind=select.value;host.innerHTML='';const selected=visuals.filter(v=>!kind||v.kind===kind).sort((a,b)=>{if(a.kind!==b.kind)return a.kind==='fes'?-1:1;if(a.kind==='cluster_populations')return (Number.isFinite(b.silhouette)?b.silhouette:-Infinity)-(Number.isFinite(a.silhouette)?a.silhouette:-Infinity);return String(a.title).localeCompare(String(b.title))});let clusterRank=0;selected.forEach(v=>drawVisualCard(v,host,v.kind==='cluster_populations'?++clusterRank:null));if(!host.children.length)host.innerHTML='<div class="empty">No molecular-state visualization is available for this filter.</div>'}select.oninput=draw;draw()}
-function renderAnalysisTabs(){const nav=$('#analysis-nav'),views=$('#analysis-views');nav.innerHTML='';views.innerHTML='';(DATA.analysis_classes||[]).forEach(group=>{const name=`analysis-${group.class_id}`,button=document.createElement('button');button.dataset.view=name;button.textContent=group.title;button.onclick=()=>go(name);nav.appendChild(button);const section=document.createElement('section');section.id=`view-${name}`;section.className='view';const reports=DATA.reports.filter(r=>r.analysis_class_id===group.class_id),figures=DATA.figures.filter(f=>f.analysis_class_id===group.class_id),visuals=allVisuals().filter(v=>v.analysis_class_id===group.class_id);section.innerHTML=`<section class="card"><h2>${esc(group.title)}</h2><div class="analysis-visuals"></div></section>${figures.length?`<section class="card"><h3>Figures</h3><div class="grid analysis-figures">${figures.map(f=>`<section class="figure"><h4>${esc(cleanLabel(f.name))}</h4><img src="data:${f.data_uri}" alt="${esc(cleanLabel(f.name))}"><p><a href="${esc(f.href)}" target="_blank">Open figure file</a></p></section>`).join('')}</div></section>`:''}<section class="card"><h3>Reports</h3>${reports.map(moduleHTML).join('')}</section>`;views.appendChild(section);const visualHost=$('.analysis-visuals',section);const ordered=visuals.sort((a,b)=>a.kind==='cluster_populations'&&b.kind==='cluster_populations'?((b.silhouette??-Infinity)-(a.silhouette??-Infinity)):String(a.title).localeCompare(String(b.title)));ordered.forEach((v,i)=>drawVisualCard(v,visualHost,v.kind==='cluster_populations'?i+1:null));if(!ordered.length)visualHost.innerHTML='<p class="muted">The report details and packaged evidence files are available below.</p>'})}
-function renderFigures(){const host=$('#figure-list');host.innerHTML=DATA.figures.map(f=>`<section class="card figure"><h3>${esc(cleanLabel(f.name))}</h3><img src="data:${f.data_uri}" alt="${esc(cleanLabel(f.name))}"><p><a href="${esc(f.href)}" target="_blank">Open figure file</a></p></section>`).join('')||'<div class="empty">No pre-rendered image files were found.</div>'}
+function tablePreview(a){const p=a.table_preview||{},cols=p.columns||[],rows=p.rows||[];if(!cols.length)return'';return `<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${esc(cleanLabel(c))}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${p.preview_truncated?`<p class="muted">Showing the first ${rows.length} rows. Open the table for the complete data.</p>`:''}`}
+function artifactCard(a,heading='h4',withAnchor=true){const title=cleanLabel(a.title||a.name||a.purpose),id=withAnchor&&a.artifact_id?` id="artifact-${esc(a.artifact_id)}"`:'';if(a.artifact_type==='figure'||a.data_uri){const image=a.data_uri?`<img src="data:${a.data_uri}" alt="${esc(title)}">`:'<p class="muted">This figure is available as a linked file.</p>';return `<section class="figure presentation-artifact"${id}><${heading}>${esc(title)}</${heading}>${image}<p><a href="${esc(a.href)}" target="_blank">Open figure file</a></p></section>`}if(a.artifact_type==='table')return `<section class="presentation-artifact table-artifact"${id}><${heading}>${esc(title)}</${heading}>${tablePreview(a)}<p><a href="${esc(a.href)}" target="_blank">Open complete table</a></p></section>`;if(a.artifact_type==='structure')return `<section class="presentation-artifact"${id}><${heading}>${esc(title)}</${heading}><p><button class="inline-link" data-structure-id="${esc(a.structure_id)}">View representative structure</button> · <a href="${esc(a.href)}" target="_blank">Open PDB</a></p></section>`;return''}
+function renderAnalysisTabs(){const nav=$('#analysis-nav'),views=$('#analysis-views');nav.innerHTML='';views.innerHTML='';(DATA.analysis_classes||[]).forEach(group=>{const name=`analysis-${group.class_id}`,button=document.createElement('button');button.dataset.view=name;button.textContent=group.title;button.onclick=()=>go(name);nav.appendChild(button);const section=document.createElement('section');section.id=`view-${name}`;section.className='view';const reports=DATA.reports.filter(r=>r.analysis_class_id===group.class_id),artifacts=(DATA.presentation_artifacts||[]).filter(a=>a.analysis_class_id===group.class_id),legacyFigures=DATA.figures.filter(f=>!f.artifact_id&&f.analysis_class_id===group.class_id),visuals=allVisuals().filter(v=>v.analysis_class_id===group.class_id);const figures=artifacts.filter(a=>a.artifact_type==='figure'),tables=artifacts.filter(a=>a.artifact_type==='table'),structures=artifacts.filter(a=>a.artifact_type==='structure');section.innerHTML=`<section class="card"><h2>${esc(group.title)}</h2><div class="analysis-visuals"></div></section>${figures.length?`<section class="card"><h3>Figures</h3><div class="grid analysis-figures">${figures.map(a=>artifactCard(a)).join('')}</div></section>`:''}${tables.length?`<section class="card"><h3>Tables</h3><div class="artifact-stack">${tables.map(a=>artifactCard(a)).join('')}</div></section>`:''}${structures.length?`<section class="card"><h3>Representative structures</h3><div class="artifact-stack">${structures.map(a=>artifactCard(a)).join('')}</div></section>`:''}${legacyFigures.length?`<section class="card"><h3>Additional figures</h3><div class="grid analysis-figures">${legacyFigures.map(f=>artifactCard(f)).join('')}</div></section>`:''}<section class="card"><h3>Reports</h3>${reports.map(moduleHTML).join('')||'<p class="muted">No JSON module report was indexed for this artifact group.</p>'}</section>`;views.appendChild(section);const visualHost=$('.analysis-visuals',section);const ordered=visuals.sort((a,b)=>a.kind==='cluster_populations'&&b.kind==='cluster_populations'?((b.silhouette??-Infinity)-(a.silhouette??-Infinity)):String(a.title).localeCompare(String(b.title)));ordered.forEach((v,i)=>drawVisualCard(v,visualHost,v.kind==='cluster_populations'?i+1:null));if(!ordered.length)visualHost.innerHTML='<p class="muted">Figures and tables for this analysis are listed below.</p>';wireActions(section)})}
+function renderFigures(){const allowed=new Set(['free-energy','clustering']),figures=DATA.figures.filter(f=>allowed.has(f.analysis_class_id));const host=$('#figure-list');host.innerHTML=figures.map(f=>artifactCard(f,'h3',false)).join('')||'<div class="empty">No molecular-state figure files were found.</div>';wireActions(host)}
 function renderResources(){const rows=DATA.resources||[],host=$('#resource-table');if(!rows.length){host.innerHTML='<div class="empty">No consolidated resource/frame table was found.</div>';return}const wanted=['module_id','technical_status','total_cpu_seconds','wall_seconds','maximum_resident_memory_mib','selected_source_physical_frames','analysis_frame_stride','basis_frame_stride','symmetry_expanded_observations','model_fit_observations','full_assignment_observations'];const cols=wanted.filter(k=>rows.some(r=>k in r));host.innerHTML=`<table><thead><tr>${cols.map(c=>`<th>${esc(cleanLabel(c))}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(c==='module_id'?moduleName(r[c]):fmt(r[c]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`}
-function renderQC(){const host=$('#qc-list');host.innerHTML=DATA.qc_issues.map(issueHTML).join('')||'<div class="empty">No QC issues were indexed.</div>';const picker=$('#picker-qc-list');picker.innerHTML=DATA.picker_qc_records.map(r=>issueHTML({severity:r.severity,code:r.status,message:r.statement,module_id:r.module_id,source:r.report_path})).join('')||'<div class="empty">No additional QC records were reported.</div>';$('#provenance-links').innerHTML=Object.entries(DATA.raw_links||{}).map(([label,href])=>`<a href="${esc(href)}" target="_blank">${esc(label)}</a>`).join(' · ');$('#provenance-json').textContent=humanizeText(JSON.stringify({module_coverage:DATA.module_coverage,chemical_context:DATA.chemical_context,conformational_views:DATA.conformational_views,sampling_plan:DATA.sampling_plan,configuration:DATA.configuration,project_manifest:DATA.project_manifest,system_manifest:DATA.system_manifest,preflight:DATA.preflight,omitted_structures:DATA.omitted_structures,omitted_figures:DATA.omitted_figures},null,2))}
+function renderQC(){const host=$('#qc-list');host.innerHTML=DATA.qc_issues.map(issueHTML).join('')||'<div class="empty">No QC issues were indexed.</div>';const picker=$('#picker-qc-list');picker.innerHTML=DATA.picker_qc_records.map(r=>issueHTML({severity:r.severity,code:r.status,message:r.statement,module_id:r.module_id,source:r.report_path})).join('')||'<div class="empty">No additional QC records were reported.</div>';const artifacts=(DATA.presentation_artifacts||[]).filter(a=>a.analysis_class_id==='qc'),artifactHost=$('#qc-artifacts');artifactHost.innerHTML=artifacts.map(a=>artifactCard(a,'h3')).join('')||'<div class="empty">No QC figure or table was generated.</div>';wireActions(artifactHost);$('#provenance-links').innerHTML=Object.entries(DATA.raw_links||{}).map(([label,href])=>`<a href="${esc(href)}" target="_blank">${esc(label)}</a>`).join(' · ');$('#provenance-json').textContent=humanizeText(JSON.stringify({module_coverage:DATA.module_coverage,chemical_context:DATA.chemical_context,conformational_views:DATA.conformational_views,sampling_plan:DATA.sampling_plan,configuration:DATA.configuration,project_manifest:DATA.project_manifest,system_manifest:DATA.system_manifest,preflight:DATA.preflight,omitted_structures:DATA.omitted_structures,omitted_figures:DATA.omitted_figures},null,2))}
 const molecular={viewer:null,model:null,index:-1};
 const elemColors={H:'#e7ecea',C:'#a9b3ae',N:'#4b77d1',O:'#d94a45',S:'#e3b63b',P:'#e27731',ZN:'#8b6ab8',MG:'#44b78b',K:'#b55ec5',NA:'#6c77d8',CA:'#3ba86a',CL:'#4db04f',FE:'#c66a35',MN:'#9c7bb8',CU:'#c77b3a',CO:'#cf718a',NI:'#70a57e'};
 const polymerResidues=new Set('ALA ARG ASN ASP CYS GLN GLU GLY HIS HSD HSE HSP ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL ACE NME A C G U T DA DC DG DT DU ADE CYT GUA THY URA RA RC RG RU'.split(' '));
@@ -1744,7 +2077,7 @@ def _render_html(data: Mapping[str, object]) -> str:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; connect-src 'none'; media-src 'self'">
 <title>{title} — interactive molecular analysis</title><style>{_CSS}</style></head>
-<body><div class="shell"><aside class="sidebar"><div class="brand">Salsbury MD Analysis</div><div class="subtitle">Interactive results · v0.1.2</div><nav class="nav">
+<body><div class="shell"><aside class="sidebar"><div class="brand">Salsbury MD Analysis</div><div class="subtitle">Interactive results · v0.1.3</div><nav class="nav">
 <button data-view="overview">Overview</button><button data-view="findings">Key findings</button><button data-view="states">Molecular states & figures</button><button data-view="molecules">Molecular structures</button><div class="nav-heading">Analysis results</div><div id="analysis-nav"></div><button data-view="analyses">All reports</button><button data-view="resources">Resources & sampling</button><button data-view="qc">QC & provenance</button></nav></aside>
 <main class="main"><div class="topline"><div><div class="eyebrow">Analysis campaign</div><h1>{title}</h1>{system_line}</div><span class="status">{html.escape(str(data['technical_status']))}</span></div>
 <section id="view-overview" class="view"><div id="stats" class="stats"></div><section class="card"><h2>Highest-priority findings</h2><p id="overview-finding-note" class="muted"></p><div id="overview-findings"></div><p><button onclick="go('findings')">Review all ranked findings</button></p></section></section>
@@ -1754,7 +2087,7 @@ def _render_html(data: Mapping[str, object]) -> str:
 <div id="analysis-views"></div>
 <section id="view-analyses" class="view"><section class="card"><h2>All reports</h2><p class="muted">Every indexed module is listed whether or not it produced a ranked finding.</p><div class="filters"><input id="module-search" placeholder="Search reports and issues"></div><div id="module-list"></div></section></section>
 <section id="view-resources" class="view"><section class="card"><h2>Resources, frames, and sampling</h2><div id="resource-table" class="table-wrap"></div></section></section>
-<section id="view-qc" class="view"><section class="card"><h2>QC requiring attention</h2><div id="qc-list"></div></section><section class="card"><h2>Additional QC records</h2><p class="muted">These records stay under QC and are not mixed into scientific-result tabs.</p><div id="picker-qc-list"></div></section><section class="card"><h2>Configuration and provenance</h2><p id="provenance-links"></p><pre id="provenance-json" class="json"></pre></section></section>
+<section id="view-qc" class="view"><section class="card"><h2>QC requiring attention</h2><div id="qc-list"></div></section><section class="card"><h2>QC figures and tables</h2><div id="qc-artifacts"></div></section><section class="card"><h2>Additional QC records</h2><p class="muted">These records stay under QC and are not mixed into scientific-result tabs.</p><div id="picker-qc-list"></div></section><section class="card"><h2>Configuration and provenance</h2><p id="provenance-links"></p><pre id="provenance-json" class="json"></pre></section></section>
 </main></div><script id="report-data" type="application/json">{encoded}</script><script>{threedmol_javascript}</script><script>{_JS}</script></body></html>"""
 
 
@@ -1850,6 +2183,19 @@ def build_interactive_report(
             "omitted_structure_count": len(data["omitted_structures"]),
             "inline_figure_count": len(data["figures"]),
             "omitted_figure_count": len(data["omitted_figures"]),
+            "presentation_artifact_count": len(data["presentation_artifacts"]),
+            "presentation_figure_count": sum(
+                row.get("artifact_type") == "figure"
+                for row in data["presentation_artifacts"]
+            ),
+            "presentation_table_count": sum(
+                row.get("artifact_type") == "table"
+                for row in data["presentation_artifacts"]
+            ),
+            "presentation_structure_count": sum(
+                row.get("artifact_type") == "structure"
+                for row in data["presentation_artifacts"]
+            ),
             "source_report_records": source_records,
             "portable_evidence_records": portable_evidence_records,
             "portable_evidence_count": len(portable_evidence_records),

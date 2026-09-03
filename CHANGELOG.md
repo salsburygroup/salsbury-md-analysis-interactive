@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3 - 2026-09-03
+
+- Read and validate the core presentation-artifact manifest.
+- Give each completed analysis its own figure and table panels.
+- Open findings at their exact figure, table, or representative structure.
+- Show radius of gyration as a Scott-rule histogram before its time series.
+- Keep the configured primary FES in front and move smoothing sensitivity to a
+  separate table.
+- Copy linked CSV tables into the portable evidence directory.
+- Recognize state representatives that retain only occupied, low-RMSF ions.
+
 ## 0.1.2 - 2026-09-03
 
 - Keep structural and preparation problems in QC while placing method review

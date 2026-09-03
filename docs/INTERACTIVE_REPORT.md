@@ -1,6 +1,6 @@
 # Interactive result browser
 
-Version 0.1.2 is an optional, offline front end for completed
+Version 0.1.3 is an optional, offline front end for completed
 `salsbury-md-analysis` campaigns. It reads the existing JSON, CSV, structures,
 and figures. Those source artifacts remain the scientific record.
 
@@ -37,7 +37,7 @@ writes:
 
 - `interactive-report/index.html`, the self-contained result browser;
 - `interactive-report/evidence/`, portable copies or compact indexes for the
-  JSON, PDB, and figure files linked from the browser; and
+  JSON, CSV, PDB, and figure files linked from the browser; and
 - `interactive-report/manifest.json`, which records the generator version, HTML
   hash, source-report hashes, and included assets.
 
@@ -54,20 +54,27 @@ The browser presents:
    campaign has at least 50 candidates, followed by every additional
    ranked candidate through searchable tier, system, category, and text
    filters and complete picker accounting;
-3. FES surfaces at every retained smoothing level and per-system surface,
-   followed by clustering methods in descending silhouette-score order;
-4. named clustering methods, cluster populations for each system, and linked
-   representative structures when the core campaign exported them;
+3. the primary FES surface at the configured smoothing level, its basin
+   populations by system, and a separate smoothing-sensitivity table;
+4. clustering methods in descending silhouette-score order, with each method
+   named and each system's state populations shown beside linked
+   representative structures;
 5. a separate tab for each analysis class, including RMSF, DCCM, ions,
    hydrogen bonds, hydration, DNA geometry, kinetics, and comparisons when
    those classes are present;
-6. interactive non-solvent representative structures and pre-rendered figures;
+6. interactive non-solvent representative structures, pre-rendered figures,
+   and CSV tables from the core presentation manifest;
 7. every module report, including its picker disposition and modules that
    produced no ranked finding;
 8. measured CPU, memory, frame selection, and observation accounting; and
 9. resolved configuration, chemical context, conformational views, QC, and
    provenance. Structural and preparation QC stay in the QC tab. Review notes
    from clustering or another analysis stay in that analysis tab.
+
+Radius of gyration appears first as a Scott-rule histogram. Its
+replica-resolved time series remains available in the same analysis tab.
+Findings open the exact figure, table, or structure named by the core artifact
+manifest rather than the first result from the same module.
 
 ## Molecular viewer boundary
 
@@ -76,6 +83,10 @@ PDB retains every non-solvent atom. The default display uses a
 NewCartoon-style ribbon for protein and nucleic-acid polymers, bonded atoms for
 ligands and cofactors, and space-filling spheres for ions. It supports rotation,
 zoom, atom filters, element/chain/B-factor colors, and atom or residue search.
+
+When a state export includes the core state-ion stability analysis, the viewer
+shows only ions assigned to occupied, low-RMSF sites in that state. The
+structure still retains all protein, nucleic acid, ligand, and cofactor atoms.
 
 The renderer is not VMD itself. Download the linked PDB and use VMD, ChimeraX,
 or another full molecular package for surfaces, measurements, topology-aware

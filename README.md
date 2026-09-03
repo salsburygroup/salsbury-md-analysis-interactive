@@ -74,9 +74,16 @@ reaches that ranking boundary. Secondary findings bring the highlighted total
 to 50 when enough candidates exist. Every other candidate remains available in
 the searchable browser and the core JSON and CSV files.
 
-The report copies the JSON, PDB, and figure files needed by its links into an
+The report copies the JSON, CSV, PDB, and figure files needed by its links into an
 `evidence/` directory. The result remains portable when the whole
 `interactive-report/` directory is moved or zipped.
+
+With a current core report, every completed analysis has at least one labeled
+figure and a CSV table when tabular values are available. Findings open the
+exact matching artifact. Radius of gyration opens a Scott-rule histogram first,
+with the replica time series in the same analysis tab. State representatives
+contain the complete non-solvent molecular system and, when the state-ion
+calculation is available, only ions retained as stable within that state.
 
 See [the detailed viewer guide](docs/INTERACTIVE_REPORT.md) and
 [the NEMO zinc-finger walkthrough](tutorials/nemo_zinc_finger/README.md). See

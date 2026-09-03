@@ -14,6 +14,91 @@ from salsbury_md_analysis_interactive.report import (
 
 
 class InteractiveReportTests(unittest.TestCase):
+    def _add_presentation_artifacts(self, root: Path) -> None:
+        artifact_root = root / "presentation-artifacts"
+        fes_path = artifact_root / "free-energy" / "primary-fes.svg"
+        rg_path = artifact_root / "structural-dynamics" / "rg-histogram.svg"
+        table_path = artifact_root / "free-energy" / "state-populations.csv"
+        for path in (fes_path, rg_path, table_path):
+            path.parent.mkdir(parents=True, exist_ok=True)
+        fes_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg"><text x="5" y="15">'
+            'PC 1 (A); PC 2 (A); free energy (kcal/mol)</text></svg>',
+            encoding="utf-8",
+        )
+        rg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg"><text x="5" y="15">'
+            'Radius of gyration (A); frame count; Scott bins</text></svg>',
+            encoding="utf-8",
+        )
+        table_path.write_text(
+            "system_id,state_id,frame_fraction\ncontrol,1,0.75\n",
+            encoding="utf-8",
+        )
+
+        def record(
+            artifact_id, artifact_type, module_id, analysis_class,
+            purpose, title, path, context, media_type,
+        ):
+            return {
+                "artifact_id": artifact_id,
+                "artifact_type": artifact_type,
+                "module_id": module_id,
+                "analysis_class": analysis_class,
+                "purpose": purpose,
+                "title": title,
+                "relative_path": str(path.relative_to(artifact_root)),
+                "media_type": media_type,
+                "context": context,
+                "primary_human_output": True,
+                "source_report_paths": ["results/pca-fes-basins/report.json"],
+                "source_report_sha256": ["0" * 64],
+                "artifact_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "artifact_size_bytes": path.stat().st_size,
+            }
+
+        artifacts = [
+            record(
+                "figure-pca-primary", "figure", "pca_fes_basins",
+                "free_energy_surfaces", "primary_fes", "Primary PCA-FES",
+                fes_path, {"system_id": "control"}, "image/svg+xml",
+            ),
+            record(
+                "table-pca-populations", "table", "pca_fes_basins",
+                "free_energy_surfaces", "state_populations",
+                "FES state populations", table_path,
+                {"system_id": "control"}, "text/csv",
+            ),
+            record(
+                "figure-rg-histogram", "figure", "replica_rmsd_rg",
+                "structural_dynamics", "radius_of_gyration_histogram",
+                "Radius of gyration Scott-rule histogram", rg_path,
+                {"system_id": "control", "binning_rule": "Scott"},
+                "image/svg+xml",
+            ),
+        ]
+        (artifact_root / "presentation-manifest.json").write_text(
+            json.dumps({
+                "presentation_manifest_schema": "salsbury-presentation-artifacts-v1",
+                "technical_status": "complete",
+                "artifact_count": len(artifacts),
+                "adapted_report_count": 3,
+                "unadapted_report_count": 0,
+                "artifacts": artifacts,
+            }),
+            encoding="utf-8",
+        )
+        findings_path = root / "prioritized_findings.json"
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+        for key in ("findings", "headline_findings", "all_candidates"):
+            for finding in findings[key]:
+                if finding["finding_id"] == "finding-000001":
+                    finding["presentation_artifacts"] = [
+                        {"artifact_id": "figure-pca-primary"},
+                        {"artifact_id": "table-pca-populations"},
+                    ]
+        findings_path.write_text(json.dumps(findings), encoding="utf-8")
+
     def _root(self, temporary: str) -> Path:
         root = Path(temporary)
         (root / "results" / "pca-fes-basins").mkdir(parents=True)
@@ -242,6 +327,7 @@ class InteractiveReportTests(unittest.TestCase):
     def test_builds_offline_findings_figures_and_molecule_browser(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self._root(temporary)
+            self._add_presentation_artifacts(root)
             result = build_interactive_report(root)
             self.assertEqual(result["technical_status"], "complete")
             self.assertEqual(result["scientific_status"], "not evaluated")
@@ -256,7 +342,7 @@ class InteractiveReportTests(unittest.TestCase):
             self.assertEqual(
                 manifest["generator_package"], "salsbury-md-analysis-interactive"
             )
-            self.assertEqual(manifest["generator_version"], "0.1.2")
+            self.assertEqual(manifest["generator_version"], "0.1.3")
             self.assertEqual(manifest["finding_count"], 1)
             self.assertEqual(manifest["headline_finding_count"], 1)
             self.assertEqual(manifest["secondary_finding_count"], 0)
@@ -265,7 +351,10 @@ class InteractiveReportTests(unittest.TestCase):
             self.assertEqual(manifest["picker_qc_record_count"], 1)
             self.assertEqual(manifest["picker_silent_omission_count"], 0)
             self.assertEqual(manifest["inline_structure_count"], 2)
-            self.assertEqual(manifest["inline_figure_count"], 1)
+            self.assertEqual(manifest["inline_figure_count"], 3)
+            self.assertEqual(manifest["presentation_artifact_count"], 3)
+            self.assertEqual(manifest["presentation_figure_count"], 2)
+            self.assertEqual(manifest["presentation_table_count"], 1)
             self.assertEqual(manifest["network_dependency"], "none")
             self.assertEqual(
                 manifest["index_sha256"], hashlib.sha256(index.read_bytes()).hexdigest()
@@ -280,6 +369,8 @@ class InteractiveReportTests(unittest.TestCase):
                 "An additional ranked candidate remains searchable.",
                 "Review the structural fixture",
                 '\"analysis_frame_stride\":4',
+                "Radius of gyration Scott-rule histogram",
+                "table-pca-populations",
             ):
                 self.assertIn(marker, text)
             for removed in (
@@ -316,12 +407,31 @@ class InteractiveReportTests(unittest.TestCase):
                 (root / "interactive-report" / "evidence" / "results"
                  / "pca-fes-basins" / "surface.svg").is_file()
             )
+            self.assertTrue(
+                (root / "interactive-report" / "evidence"
+                 / "presentation-artifacts" / "structural-dynamics"
+                 / "rg-histogram.svg").is_file()
+            )
+            self.assertTrue(
+                (root / "interactive-report" / "evidence"
+                 / "presentation-artifacts" / "free-energy"
+                 / "state-populations.csv").is_file()
+            )
             data_match = re.search(
                 r'<script id="report-data" type="application/json">(.*?)</script>',
                 text,
             )
             self.assertIsNotNone(data_match)
             embedded = json.loads(data_match.group(1))
+            self.assertEqual(
+                [
+                    row["artifact_id"]
+                    for row in embedded["headline_findings"][0][
+                        "resolved_presentation_artifacts"
+                    ]
+                ],
+                ["figure-pca-primary", "table-pca-populations"],
+            )
             self.assertNotIn(
                 "clustering_kmeans",
                 {str(row.get("module_id")) for row in embedded["qc_issues"]},

@@ -605,7 +605,7 @@ class InteractiveReportTests(unittest.TestCase):
                 "satisfied",
             )
             self.assertIn("Searchable candidate 60", html_text)
-            self.assertIn("largest and most scientifically relevant", html_text)
+            self.assertIn("within-family effect rank", html_text)
 
     def test_nonfinite_scientific_values_become_strict_json_nulls(self):
         with tempfile.TemporaryDirectory() as temporary:

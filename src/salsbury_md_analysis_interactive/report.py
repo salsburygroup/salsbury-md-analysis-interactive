@@ -314,12 +314,51 @@ def _sha256_file(path: Path) -> str:
 
 
 def _relative(path: Path, root: Path) -> str:
+    root = root.resolve()
+    # Keep an extension's local link name, not its upstream absolute path.
+    # Only explicitly hash-pinned reused reports (and their sidecars/system
+    # manifest) may resolve outside the campaign. Other symlinks stay rejected.
     try:
         return str(path.resolve(strict=False).relative_to(root))
     except ValueError as exc:
-        raise InteractiveReportError(
-            f"interactive-report asset escapes the analysis root: {path}"
-        ) from exc
+        try:
+            relative = path.absolute().relative_to(root)
+            if ".." in relative.parts:
+                raise ValueError("parent traversal")
+            contract_path = root / "experimental-after-main-contract.json"
+            if contract_path.resolve().parent != root:
+                raise ValueError("outside-root extension contract")
+            contract = _load_json(contract_path)
+            if (not isinstance(contract, dict)
+                    or contract.get("extension_contract_schema") != "salsbury-experimental-after-main-v1"
+                    or contract.get("technical_status") != "complete"
+                    or contract.get("immutable_upstream") is not True):
+                raise ValueError("invalid extension contract")
+            upstream = Path(contract["upstream_main_campaign"]).resolve(strict=True)
+            authorized = {}
+            for row in contract.get("reusable_reports", []):
+                name = row["report_relative_path"]
+                report_name = Path(name)
+                if report_name.is_absolute() or ".." in report_name.parts:
+                    raise ValueError("unsafe upstream report path")
+                authorized[name] = row["report_sha256"]
+                authorized[name + ".summary.json"] = row["summary_sha256"]
+            if str(relative) == "system.json":
+                expected = Path(contract["upstream_system_manifest"]).resolve(strict=True)
+                digest = contract["upstream_system_manifest_sha256"]
+            else:
+                digest = authorized[str(relative)]
+                expected = (upstream / relative).resolve(strict=True)
+            if upstream not in expected.parents or path.resolve(strict=True) != expected:
+                raise ValueError("upstream target mismatch")
+            if _sha256_file(expected) != digest:
+                raise ValueError("upstream content hash mismatch")
+            return str(relative)
+        except (OSError, ValueError, KeyError, TypeError) as contract_error:
+            raise InteractiveReportError(
+                f"interactive-report asset escapes the analysis root without valid "
+                f"extension provenance: {path}: {contract_error}"
+            ) from exc
 
 
 def _raw_link(relative_path: str) -> str:
@@ -1486,6 +1525,9 @@ def _write_portable_evidence(
             continue
         relative = str(report["path"])
         source = root / relative
+        _relative(source, root)
+        if _sha256_file(source) != report.get("sha256"):
+            raise InteractiveReportError(f"report changed during packaging: {relative}")
         copy_complete = (
             source.stat().st_size <= _MAXIMUM_PORTABLE_REPORT_BYTES
             and copied_report_bytes + source.stat().st_size
@@ -1496,6 +1538,8 @@ def _write_portable_evidence(
             destination = target / _portable_href(destination_relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
+            if _sha256_file(destination) != report.get("sha256"):
+                raise InteractiveReportError(f"report changed during copying: {relative}")
             copied_report_bytes += source.stat().st_size
             report["evidence_kind"] = "complete_json"
         else:
@@ -1573,10 +1617,12 @@ def _write_portable_evidence(
         "sampling-plan.json", "automatic-chemical-context.json",
         "conformational-views.json", "project.json", "system.json",
         "presentation-artifacts/presentation-manifest.json",
+        "experimental-after-main-contract.json",
     ):
         source = root / relative
         if not source.is_file():
             continue
+        _relative(source, root)
         destination = target / _portable_href(relative)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
@@ -2027,7 +2073,7 @@ function wireActions(host){$$('[data-report-view]',host).forEach(b=>b.onclick=()
 function findingHTML(f,i){const tier=f.presentation_tier||'headline',sig=f.statistically_significant===true?badge('statistically significant after correction','sig'):'';return `<div class="finding" data-category="${esc(f.category)}" data-systems="${esc((f.system_ids||[]).join(' '))}" data-tier="${esc(tier)}" data-search="${esc(JSON.stringify(f).toLowerCase())}"><div class="rank">${esc(String(f.finding_id||i+1).replace('finding-','').replace(/^0+/,''))}</div><div><div>${esc(humanizeText(f.statement))}</div><div class="badges">${badge(tier.replaceAll('_',' '))}${badge(cleanLabel(f.category))}${badge(moduleName(f.module_id))}${sig}${(f.system_ids||[]).map(s=>badge(cleanLabel(s))).join('')}</div><div class="finding-footer"><span>Effect: ${fmt(f.effect_value)}</span>${findingActions(f)}</div></div></div>`}
 function renderFindings(){const host=$('#findings-list');host.innerHTML=DATA.findings.length?DATA.findings.map(findingHTML).join(''):'<div class="empty">No ranked findings were generated.</div>';wireActions(host);const cats=[...new Set(DATA.findings.map(f=>f.category))].sort();const systems=[...new Set(DATA.findings.flatMap(f=>f.system_ids||[]))].sort();$('#finding-category').innerHTML='<option value="">All categories</option>'+cats.map(v=>`<option>${esc(cleanLabel(v))}</option>`).join('');$('#finding-system').innerHTML='<option value="">All systems</option>'+systems.map(v=>`<option>${esc(v)}</option>`).join('');const tier=$('#finding-tier');tier.innerHTML=`<option value="headline">Headline (${DATA.headline_findings.length})</option><option value="secondary">Secondary (${DATA.secondary_findings.length})</option><option value="additional_candidate">Additional candidates (${Math.max(0,DATA.findings.length-DATA.highlighted_findings.length)})</option><option value="">All candidates (${DATA.findings.length})</option>`;const filter=()=>{const q=$('#finding-search').value.toLowerCase(),c=$('#finding-category').value,s=$('#finding-system').value,t=tier.value;let shown=0;$$('.finding',host).forEach(row=>{row.hidden=!!((q&&!row.dataset.search.includes(q))||(c&&cleanLabel(row.dataset.category)!==c)||(s&&!row.dataset.systems.split(' ').includes(s))||(t&&row.dataset.tier!==t));if(!row.hidden)shown+=1});$('#finding-summary').textContent=`Showing ${shown} of ${DATA.findings.length} ranked candidates.`};['finding-search','finding-category','finding-system','finding-tier'].forEach(id=>$(`#${id}`).oninput=filter);filter()}
 function issueHTML(i){const sev=String(i.severity||'info').toLowerCase(),source=String(i.source||'').includes('results/')?'Analysis report':cleanLabel(i.source||'');return `<div class="issue ${esc(sev)}"><strong>${esc(sev.toUpperCase())}</strong> ${i.code?`<code>${esc(i.code)}</code>`:''}<div>${esc(humanizeText(i.message||i.reason||JSON.stringify(i)))}</div><small class="muted">${esc(moduleName(i.module_id)||'')} ${esc(source)} ${esc(cleanLabel(i.location||''))}</small></div>`}
-function renderOverview(){const meta=DATA.finding_metadata||{};$('#stats').innerHTML=[['Module reports',DATA.reports.length],['Analysis classes',DATA.analysis_classes.length],['Picker-accounted modules',DATA.module_accounting.length],['Silent omissions',meta.silent_omission_count??'—'],['Headline findings',DATA.headline_findings.length],['Secondary findings',DATA.secondary_findings.length],['All candidates',DATA.findings.length]].map(([a,b])=>`<div class="stat"><strong>${fmt(b)}</strong><span>${esc(a)}</span></div>`).join('');$('#overview-finding-note').textContent=`The opening page shows the ${DATA.headline_findings.length} largest and most scientifically relevant observed differences selected by the picker. ${DATA.secondary_findings.length} additional highlights follow, and all ${DATA.findings.length} candidates remain searchable.`;const host=$('#overview-findings');host.innerHTML=DATA.headline_findings.map(findingHTML).join('')||'<div class="empty">No findings available.</div>';wireActions(host)}
+function renderOverview(){const meta=DATA.finding_metadata||{};$('#stats').innerHTML=[['Module reports',DATA.reports.length],['Analysis classes',DATA.analysis_classes.length],['Picker-accounted modules',DATA.module_accounting.length],['Silent omissions',meta.silent_omission_count??'—'],['Headline findings',DATA.headline_findings.length],['Secondary findings',DATA.secondary_findings.length],['All candidates',DATA.findings.length]].map(([a,b])=>`<div class="stat"><strong>${fmt(b)}</strong><span>${esc(a)}</span></div>`).join('');$('#overview-finding-note').textContent=`The opening page shows the ${DATA.headline_findings.length} observed results prioritized by within-family effect rank and available statistical evidence. ${DATA.secondary_findings.length} additional highlights follow, and all ${DATA.findings.length} candidates remain searchable.`;const host=$('#overview-findings');host.innerHTML=DATA.headline_findings.map(findingHTML).join('')||'<div class="empty">No findings available.</div>';wireActions(host)}
 function moduleHTML(r){const metrics=(r.key_metrics||[]).map(m=>`<div class="metric"><strong>${esc(cleanLabel(m.label))}</strong><br>${esc(fmt(m.value))}</div>`).join(''),a=DATA.module_accounting.find(x=>x.module_id===r.module_id),evidenceLabel=r.evidence_kind==='complete_json'?'Open results JSON':'Open compact results JSON',notes=(r.review_notes||[]).map(n=>issueHTML({severity:n.severity,code:n.status,message:n.statement,module_id:n.module_id})).join('');return `<details class="module-row" data-class="${esc(r.analysis_class_id)}" data-search="${esc((r.title+' '+r.context+' '+JSON.stringify(r.issues)+' '+JSON.stringify(a||{})).toLowerCase())}"><summary><span>${esc(r.title)} <small class="muted">${esc(r.context)}</small></span><span>${a?badge(cleanLabel(a.disposition)):''}${badge(r.technical_status,r.technical_status==='failed'?'severity-error':'')}</span></summary><p class="muted">${(r.size_bytes/1024).toFixed(1)} KiB · <a href="${esc(r.href)}" target="_blank">${evidenceLabel}</a></p>${a?`<p><strong>Picker accounting:</strong> ${esc(humanizeText(a.reason))} Candidates: ${fmt(a.candidate_count)}; highlighted: ${fmt(a.reported_finding_count)}.</p>`:''}<div class="metric-list">${metrics||'<span class="muted">No compact numeric metrics indexed.</span>'}</div>${(r.issues||[]).map(issueHTML).join('')}${notes}<details><summary>Indexed JSON preview</summary><pre class="json">${esc(humanizeText(JSON.stringify(r.preview,null,2)))}</pre></details>${(r.limitations||[]).length?`<details><summary>Scientific limitations</summary><ul>${r.limitations.map(x=>`<li>${esc(humanizeText(x))}</li>`).join('')}</ul></details>`:''}</details>`}
 function renderModules(){const host=$('#module-list');host.innerHTML=DATA.reports.map(moduleHTML).join('')||'<div class="empty">No module reports found.</div>';$('#module-search').oninput=()=>{const q=$('#module-search').value.toLowerCase();$$('.module-row',host).forEach(r=>r.hidden=q&&!r.dataset.search.includes(q))}}
 function renderAccounting(){const rows=DATA.module_accounting||[],host=$('#accounting-table');if(!rows.length){host.innerHTML='<div class="empty">No picker-accounting records were found.</div>';return}const cols=['module_id','review_role','report_count','candidate_count','reported_finding_count','disposition'];host.innerHTML=`<table><thead><tr>${cols.map(c=>`<th>${esc(cleanLabel(c))}</th>`).join('')}<th>Reason</th></tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(c==='module_id'?moduleName(r[c]):cleanLabel(fmt(r[c])))}</td>`).join('')}<td style="white-space:normal">${esc(humanizeText(r.reason))}</td></tr>`).join('')}</tbody></table>`}
@@ -2113,7 +2159,9 @@ def _render_html(data: Mapping[str, object]) -> str:
         separators=(",", ":"),
         allow_nan=False,
     )
-    encoded = encoded.replace("</script", "<\\/script").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    encoded = (encoded.replace("&", "\\u0026").replace("<", "\\u003c")
+               .replace(">", "\\u003e").replace("\u2028", "\\u2028")
+               .replace("\u2029", "\\u2029"))
     title = html.escape(str(data["title"]))
     systems = ", ".join(data.get("system_ids", []))
     system_line = f'<div class="muted">{html.escape(systems)}</div>' if systems else ""
@@ -2125,7 +2173,7 @@ def _render_html(data: Mapping[str, object]) -> str:
 <button data-view="overview">Overview</button><button data-view="findings">Key findings</button><button data-view="states">Molecular states & figures</button><button data-view="molecules">Molecular structures</button><div class="nav-heading">Analysis results</div><div id="analysis-nav"></div><button data-view="analyses">All reports</button><button data-view="resources">Resources & sampling</button><button data-view="qc">QC & provenance</button></nav></aside>
 <main class="main"><div class="topline"><div><div class="eyebrow">Analysis campaign</div><h1>{title}</h1>{system_line}</div><span class="status">{html.escape(str(data['technical_status']))}</span></div>
 <section id="view-overview" class="view"><div id="stats" class="stats"></div><section class="card"><h2>Highest-priority findings</h2><p id="overview-finding-note" class="muted"></p><div id="overview-findings"></div><p><button onclick="go('findings')">Review all ranked findings</button></p></section></section>
-<section id="view-findings" class="view"><section class="card"><h2>Ranked findings</h2><p class="muted">The opening page contains the largest and most scientifically relevant observed differences selected by the picker. Additional highlights and every other candidate remain searchable here.</p><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-tier"></select><select id="finding-category"></select><select id="finding-system"></select></div><p id="finding-summary" class="muted"></p><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
+<section id="view-findings" class="view"><section class="card"><h2>Ranked findings</h2><p class="muted">The opening page contains the observed results prioritized by within-family effect rank and available statistical evidence. Additional highlights and every other candidate remain searchable here.</p><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-tier"></select><select id="finding-category"></select><select id="finding-system"></select></div><p id="finding-summary" class="muted"></p><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
 <section id="view-states" class="view"><section class="card"><h2>Molecular states & generated figures</h2><p class="muted">Free-energy surfaces appear first. When numerical clustering records are available, methods follow in descending silhouette-score order with per-system populations and representative structures.</p><div class="visual-controls"><select id="visual-kind"></select></div></section><div id="visual-list"></div><h2>State populations and comparison figures</h2><div id="figure-list" class="grid"></div></section>
 <section id="view-molecules" class="view"><section class="card"><h2>Representative molecular structures</h2><p class="muted">Each packaged PDB retains all non-solvent atoms. The default view uses a VMD-style polymer cartoon, bonded ligands and cofactors, and space-filling ions.</p><div class="molecule-layout"><div class="viewer"><div class="viewer-tools"><select id="viewer-representation"><option value="overview">Cartoon + ligands/cofactors + ions</option><option value="all">All non-solvent atoms</option><option value="backbone">Polymer cartoon</option><option value="hetero">Ligands, cofactors and ions</option></select><select id="viewer-color"><option value="chain">Color by chain</option><option value="element">Color by element</option><option value="bfactor">Color by B factor</option></select><label style="color:white"><input id="viewer-h" type="checkbox"> H</label><input id="viewer-search" placeholder="A:CYS54:SG"><button id="viewer-reset">Reset</button></div><div id="molecule-viewer" class="molecule-viewer"></div><div id="viewer-info" class="viewer-info"></div></div><div><h3 id="structure-title">Structures</h3><div id="structure-list" class="structure-list"></div></div></div></section></section>
 <div id="analysis-views"></div>
@@ -2151,7 +2199,35 @@ def _validate_existing(target: Path) -> Dict[str, object]:
         raise InteractiveReportError(
             f"existing interactive report is incomplete or hash-mismatched: {target}"
         )
-    return {**manifest, "reused": True}
+    records = manifest.get("portable_evidence_records")
+    if not isinstance(records, list) or len(records) != manifest.get("portable_evidence_count"):
+        raise InteractiveReportError("existing report lacks a complete portable evidence manifest")
+    seen = set()
+    source_changes = []
+    for record in records:
+        name = record.get("path") if isinstance(record, dict) else None
+        if not isinstance(name, str) or name in seen:
+            raise InteractiveReportError("invalid or duplicate packaged evidence path")
+        seen.add(name)
+        candidate = (target / name).resolve(strict=False)
+        if target.resolve() not in candidate.parents or not candidate.is_file():
+            raise InteractiveReportError(f"missing or outside-root packaged evidence: {name}")
+        if _sha256_file(candidate) != record.get("sha256"):
+            raise InteractiveReportError(f"packaged evidence hash mismatch: {name}")
+        source_name = record.get("source_path")
+        if isinstance(source_name, str):
+            source = target.parent / source_name
+            try:
+                _relative(source, target.parent)
+                unchanged = source.is_file() and _sha256_file(source) == record.get("source_sha256")
+            except InteractiveReportError:
+                unchanged = False
+            if not unchanged:
+                source_changes.append(source_name)
+    return {**manifest, "reused": True, "output_directory": str(target),
+            "source_snapshot_status": "changed" if source_changes else "unchanged",
+            "changed_source_paths": sorted(set(source_changes)),
+            "reuse_notice": "Existing immutable snapshot validated. Use a new output name to rebuild changed sources."}
 
 
 def build_interactive_report(

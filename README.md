@@ -21,7 +21,7 @@ python -m pip install \
   "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
 ```
 
-The interactive package declares `salsbury-md-analysis>=0.1.2,<0.2` as a
+The interactive package declares `salsbury-md-analysis>=0.1.2,<0.3` as a
 dependency. Both GitHub requirements appear above because that dependency is
 not published on PyPI. A source checkout is needed only for development or for
 bundled teaching files such as the NEMO tutorial trajectory.
@@ -47,7 +47,7 @@ browser. The report does not need a web server or internet connection and does
 not send structures or results to an external service.
 
 Generation is immutable. If an interactive report already exists, its manifest
-and HTML checksum must validate before it is reused. Changed or partial output
+HTML checksum, and every packaged evidence hash must validate before reuse. Changed or partial output
 fails closed instead of being overwritten.
 
 ## What the report shows
@@ -68,10 +68,10 @@ The molecular viewer packages complete non-solvent structures. Its bundled
 cofactors as bonded atoms, and ions as space-filling spheres. The underlying
 PDB remains available beside the viewer.
 
-The opening page shows 10–12 headline findings. Ten are always shown; the
-picker adds an eleventh or twelfth only when supported statistical significance
-reaches that ranking boundary. Secondary findings bring the highlighted total
-to 50 when enough candidates exist. Every other candidate remains available in
+The picker targets 10–12 headline findings and can show fewer when fewer
+qualify. It uses within-family effect ranks and available statistical evidence,
+without category quotas. Secondary findings bring the highlighted total to
+50 when enough eligible candidates exist. Every other candidate remains available in
 the searchable browser and the core JSON and CSV files.
 
 The report copies the JSON, CSV, PDB, and figure files needed by its links into an

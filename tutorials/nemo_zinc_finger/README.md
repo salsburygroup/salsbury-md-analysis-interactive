@@ -33,14 +33,15 @@ The full Conda environment includes NumPy, SciPy, scikit-learn, HDBSCAN, and
 ```bash
 micromamba create --prefix ./.venv --file environment.yml \
   --override-channels --channel conda-forge --strict-channel-priority
-./.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+./.venv/bin/python -m pip install --no-build-isolation -e .
 ./.venv/bin/python -m pip install \
   "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
 ```
 
-Check that the secondary-structure executable is available:
+Check that the environment is consistent and the secondary-structure executable is available:
 
 ```bash
+./.venv/bin/python -m pip check
 ./.venv/bin/mkdssp --version
 ```
 
@@ -156,3 +157,9 @@ or inline asset limits:
 ```
 
 This changes only the browser. The scientific outputs remain unchanged.
+
+The repaired picker may show fewer than ten headlines when fewer candidates
+qualify. Check each finding's effect and supporting figure; headline placement
+does not establish physical importance. PCA now has variance plots, tICA has
+labeled timescales, and ESS has its own panel. The release tags in this tutorial
+remain fixed; use the reviewed repair checkout to test unreleased changes.

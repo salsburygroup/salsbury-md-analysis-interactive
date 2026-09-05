@@ -15,7 +15,7 @@ python -m pip install \
   "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
 ```
 
-The interactive package declares `salsbury-md-analysis>=0.1.2,<0.2` as a
+The interactive package declares `salsbury-md-analysis>=0.1.2,<0.3` as a
 dependency, but that core package is not on PyPI. Supplying both GitHub
 requirements lets pip resolve the dependency without two source checkouts.
 
@@ -47,9 +47,8 @@ to an external service.
 
 The browser presents:
 
-1. 10–12 headline findings; the picker always shows
-   10 and extends the opening section to 11 or 12 only when a
-   Benjamini-Hochberg-significant finding reaches the boundary;
+1. up to 12 qualifying headline findings, selected using within-family effect
+   ranks and available statistical evidence, without category quotas;
 2. enough secondary findings to bring the highlighted total to 50 when the
    campaign has at least 50 candidates, followed by every additional
    ranked candidate through searchable tier, system, category, and text
@@ -116,7 +115,7 @@ Use `--output-name` to choose a different safe output-directory name. Asset
 limits can be changed with the documented `--maximum-inline-*` options.
 
 Generation is immutable. If the output directory already exists, its manifest
-and HTML hash must validate before it is reused. A partial or changed directory
+HTML hash, and every packaged evidence hash must validate before reuse. A partial or changed directory
 fails closed instead of being overwritten.
 
 The companion accepts an analysis root, not a PDB, PSF, PRMTOP, trajectory, or
@@ -130,3 +129,17 @@ Review sampling, convergence, chemistry, uncertainty, and the underlying
 method report before interpreting FES basins, clustering, silhouettes, state
 populations, representatives, correlations, or ion geometry. The report helps
 locate and compare evidence; it does not replace that review.
+
+
+## Reuse and experimental compatibility
+
+A valid older snapshot can still be opened after the analysis directory changes.
+Reusing it reports `source_snapshot_status: changed` and lists changed source
+paths; choose a new `--output-name` to include the new results. Missing or
+changed packaged evidence prevents reuse.
+
+The dependency range accepts both the stable 0.1.x core and the tested 0.2.0a2
+experimental core. To use experimental, supply its GitHub requirement explicitly
+alongside the viewer requirement and enable pip's `--pre` option. The viewer
+never starts either analysis workflow. Existing releases remain unchanged by
+the unreleased repair branch.

@@ -12,6 +12,12 @@ finishes to browse its results.
 
 ## Install
 
+The unreleased 0.1.4rc1 candidate uses the core candidate's shared clustering
+selection. Install its wheel alongside main 0.1.3rc1 or experimental 0.2.0a3.
+For a local candidate checkout, install the core checkout first, then run
+`python -m pip install .` here. The published-release commands below install
+the older releases, not these candidate changes.
+
 Current releases are GitHub source distributions. This command installs both
 without making source checkouts:
 
@@ -54,10 +60,13 @@ fails closed instead of being overwritten.
 
 The browser opens with the picker’s prioritized findings. A finding links to
 its analysis tab and, when available, to a figure or representative structure.
-Free-energy surfaces come first in the molecular-states view. Clustering
-methods follow from highest to lowest silhouette score, with each method named,
-each system’s cluster populations tabulated, and exported cluster structures
-shown beside the result.
+Free-energy surfaces come first in the molecular-states view. One primary
+clustering partition follows for each comparable view, with method names,
+per-system populations, and representative structures. Expand alternatives
+to inspect the rest. The viewer uses the core picker's decision; it does not
+rank incompatible scores or choose a different winner. Legacy reports without
+a common evaluation remain unranked. A silhouette score is method information,
+not a scientific headline.
 
 Each analysis class has its own tab. QC errors and warnings stay in the QC tab;
 review notes from clustering or another scientific method stay with that

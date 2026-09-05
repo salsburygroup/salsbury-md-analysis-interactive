@@ -123,7 +123,10 @@ external service, or download JavaScript after it opens.
 
 Read the prioritized findings, then open their linked analysis tabs, figures,
 or representative structures. The molecular-states tab places the FES first
-and orders clustering methods by silhouette score. Its population tables show
+and then shows one primary clustering partition per comparable view. Expand
+alternatives to inspect other methods. Older reports without comparable
+evaluation evidence remain unranked. Silhouette is a partition diagnostic,
+not a physical finding. The population tables show
 how the NEMO frames are distributed across clusters. The structure viewer keeps
 the protein and zinc ion while excluding solvent. If the core report includes
 state-conditioned ion stability, a state representative shows zinc only when

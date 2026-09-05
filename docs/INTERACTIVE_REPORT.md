@@ -55,9 +55,11 @@ The browser presents:
    filters and complete picker accounting;
 3. the primary FES surface at the configured smoothing level, its basin
    populations by system, and a separate smoothing-sensitivity table;
-4. clustering methods in descending silhouette-score order, with each method
-   named and each system's state populations shown beside linked
-   representative structures;
+4. one primary clustering partition per comparable view, selected by the core
+   package on shared evaluation observations and geometry, with the method,
+   per-system state populations, and representative structures. Other methods
+   remain in a closed alternatives section. Missing or incompatible evaluation
+   evidence leaves a view unranked rather than producing a guessed winner;
 5. a separate tab for each analysis class, including RMSF, DCCM, ions,
    hydrogen bonds, hydration, DNA geometry, kinetics, and comparisons when
    those classes are present;

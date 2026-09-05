@@ -14,6 +14,28 @@ from salsbury_md_analysis_interactive.report import (
 
 
 class InteractiveReportTests(unittest.TestCase):
+    def test_core_partition_selection_is_preserved_not_rescored_by_viewer(self):
+        from salsbury_md_analysis_interactive.report import _apply_clustering_selection
+        reports = [{"path":"results/view/alternative-clustering/report.json", "visuals":[
+            {"kind":"cluster_populations", "method_id":"pam", "silhouette":.99},
+            {"kind":"cluster_populations", "method_id":"gaussian_mixture", "silhouette":.6}]}]
+        findings = {"clustering_selection":{"groups":[{"status":"selected","reason":"same evaluation",
+            "candidates":[{"report_path":"/old/results/view/alternative-clustering/report.json",
+                "algorithm":"gaussian_mixture","presentation_role":"primary","evaluation":{"score":.7}},
+                {"report_path":"/old/results/view/alternative-clustering/report.json",
+                "algorithm":"pam","presentation_role":"alternative","evaluation":{"score":.5}}]}]}}
+        _apply_clustering_selection(reports, findings)
+        self.assertEqual([v["clustering_role"] for v in reports[0]["visuals"]], ["alternative","primary"])
+        self.assertEqual(reports[0]["visuals"][1]["selection_silhouette"], .7)
+
+    def test_legacy_scores_cannot_create_a_primary_partition_in_viewer(self):
+        from salsbury_md_analysis_interactive.report import _apply_clustering_selection
+        reports = [{"path":"results/clustering/report.json", "visuals":[
+            {"kind":"cluster_populations", "method_id":"clustering_kmeans", "silhouette":.99}]}]
+        _apply_clustering_selection(reports, {})
+        self.assertEqual(reports[0]["visuals"][0]["clustering_role"], "alternative")
+        self.assertEqual(reports[0]["visuals"][0]["clustering_selection_status"], "abstained")
+
     def _add_presentation_artifacts(self, root: Path) -> None:
         artifact_root = root / "presentation-artifacts"
         fes_path = artifact_root / "free-energy" / "primary-fes.svg"
@@ -347,7 +369,9 @@ class InteractiveReportTests(unittest.TestCase):
             self.assertEqual(
                 manifest["generator_package"], "salsbury-md-analysis-interactive"
             )
-            self.assertEqual(manifest["generator_version"], "0.1.3")
+            from salsbury_md_analysis_interactive import __version__
+            self.assertEqual(manifest["generator_version"], __version__)
+            self.assertIn("Interactive results · v" + __version__, (root / "interactive-report/index.html").read_text())
             self.assertEqual(manifest["finding_count"], 1)
             self.assertEqual(manifest["headline_finding_count"], 1)
             self.assertEqual(manifest["secondary_finding_count"], 0)
@@ -389,7 +413,8 @@ class InteractiveReportTests(unittest.TestCase):
             )
             self.assertIn("$3Dmol.createViewer", text)
             self.assertIn("Free-energy surfaces", text)
-            self.assertIn("Clustering, best silhouette first", text)
+            self.assertIn("Clustering by view", text)
+            self.assertIn("Alternative and unranked clustering results", text)
             self.assertIn("Population (%)", text)
             self.assertIn("View figure", text)
             self.assertIn("PC ${v.x_component||1} coordinate (Å)", text)

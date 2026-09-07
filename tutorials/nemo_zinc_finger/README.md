@@ -33,14 +33,15 @@ The full Conda environment includes NumPy, SciPy, scikit-learn, HDBSCAN, and
 ```bash
 micromamba create --prefix ./.venv --file environment.yml \
   --override-channels --channel conda-forge --strict-channel-priority
-./.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+./.venv/bin/python -m pip install --no-build-isolation -e .
 ./.venv/bin/python -m pip install \
   "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
 ```
 
-Check that the secondary-structure executable is available:
+Check that the environment is consistent and the secondary-structure executable is available:
 
 ```bash
+./.venv/bin/python -m pip check
 ./.venv/bin/mkdssp --version
 ```
 
@@ -122,7 +123,10 @@ external service, or download JavaScript after it opens.
 
 Read the prioritized findings, then open their linked analysis tabs, figures,
 or representative structures. The molecular-states tab places the FES first
-and orders clustering methods by silhouette score. Its population tables show
+and then shows one primary clustering partition per comparable view. Expand
+alternatives to inspect other methods. Older reports without comparable
+evaluation evidence remain unranked. Silhouette is a partition diagnostic,
+not a physical finding. The population tables show
 how the NEMO frames are distributed across clusters. The structure viewer keeps
 the protein and zinc ion while excluding solvent. If the core report includes
 state-conditioned ion stability, a state representative shows zinc only when
@@ -156,3 +160,9 @@ or inline asset limits:
 ```
 
 This changes only the browser. The scientific outputs remain unchanged.
+
+The repaired picker may show fewer than ten headlines when fewer candidates
+qualify. Check each finding's effect and supporting figure; headline placement
+does not establish physical importance. PCA now has variance plots, tICA has
+labeled timescales, and ESS has its own panel. The release tags in this tutorial
+remain fixed; use the reviewed repair checkout to test unreleased changes.

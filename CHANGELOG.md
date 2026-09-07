@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4rc1 - unreleased
+
+- Use the core picker's primary clustering partition for each comparable view.
+- Keep alternatives and their artifacts behind expandable sections.
+- Keep FES separate; do not promote fit scores into physical headlines.
+- Document terminal-only use after main or experimental analysis.
+- Take the displayed and manifest version from the package version.
+
 ## 0.1.3 - 2026-09-03
 
 - Publish the first tagged interactive release against core version 0.1.2.

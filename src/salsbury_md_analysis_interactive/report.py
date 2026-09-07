@@ -20,6 +20,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
+from . import __version__
 
 class InteractiveReportError(ValueError):
     """Raised when an interactive result cannot preserve source evidence."""
@@ -38,7 +39,7 @@ _MAXIMUM_PORTABLE_REPORT_BYTES = 5_000_000
 _MAXIMUM_PORTABLE_EVIDENCE_BYTES = 100_000_000
 _MAXIMUM_STREAMED_VISUAL_ROWS = 500_000
 _GENERATOR_PACKAGE = "salsbury-md-analysis-interactive"
-_GENERATOR_VERSION = "0.1.3"
+_GENERATOR_VERSION = __version__
 _THREEDMOL_PATH = Path(__file__).with_name("vendor") / "3Dmol-min.js"
 _PRESENTATION_MANIFEST_SCHEMA = "salsbury-presentation-artifacts-v1"
 _MAXIMUM_TABLE_PREVIEW_ROWS = 200
@@ -314,12 +315,51 @@ def _sha256_file(path: Path) -> str:
 
 
 def _relative(path: Path, root: Path) -> str:
+    root = root.resolve()
+    # Keep an extension's local link name, not its upstream absolute path.
+    # Only explicitly hash-pinned reused reports (and their sidecars/system
+    # manifest) may resolve outside the campaign. Other symlinks stay rejected.
     try:
         return str(path.resolve(strict=False).relative_to(root))
     except ValueError as exc:
-        raise InteractiveReportError(
-            f"interactive-report asset escapes the analysis root: {path}"
-        ) from exc
+        try:
+            relative = path.absolute().relative_to(root)
+            if ".." in relative.parts:
+                raise ValueError("parent traversal")
+            contract_path = root / "experimental-after-main-contract.json"
+            if contract_path.resolve().parent != root:
+                raise ValueError("outside-root extension contract")
+            contract = _load_json(contract_path)
+            if (not isinstance(contract, dict)
+                    or contract.get("extension_contract_schema") != "salsbury-experimental-after-main-v1"
+                    or contract.get("technical_status") != "complete"
+                    or contract.get("immutable_upstream") is not True):
+                raise ValueError("invalid extension contract")
+            upstream = Path(contract["upstream_main_campaign"]).resolve(strict=True)
+            authorized = {}
+            for row in contract.get("reusable_reports", []):
+                name = row["report_relative_path"]
+                report_name = Path(name)
+                if report_name.is_absolute() or ".." in report_name.parts:
+                    raise ValueError("unsafe upstream report path")
+                authorized[name] = row["report_sha256"]
+                authorized[name + ".summary.json"] = row["summary_sha256"]
+            if str(relative) == "system.json":
+                expected = Path(contract["upstream_system_manifest"]).resolve(strict=True)
+                digest = contract["upstream_system_manifest_sha256"]
+            else:
+                digest = authorized[str(relative)]
+                expected = (upstream / relative).resolve(strict=True)
+            if upstream not in expected.parents or path.resolve(strict=True) != expected:
+                raise ValueError("upstream target mismatch")
+            if _sha256_file(expected) != digest:
+                raise ValueError("upstream content hash mismatch")
+            return str(relative)
+        except (OSError, ValueError, KeyError, TypeError) as contract_error:
+            raise InteractiveReportError(
+                f"interactive-report asset escapes the analysis root without valid "
+                f"extension provenance: {path}: {contract_error}"
+            ) from exc
 
 
 def _raw_link(relative_path: str) -> str:
@@ -553,7 +593,7 @@ def _clustering_visuals(
             if not isinstance(row, dict):
                 continue
             method_id = str(
-                row.get("algorithm_id", row.get("algorithm", row.get("method", "clustering")))
+                row.get("requested_algorithm", row.get("algorithm_id", row.get("algorithm", row.get("method", "clustering"))))
             )
             visual = _cluster_visual(
                 method_id=method_id,
@@ -612,6 +652,45 @@ def _rmsf_visuals(report: Mapping[str, object]) -> List[Dict[str, object]]:
                 "residues": rows,
             })
     return visuals
+
+
+def _apply_clustering_selection(reports, findings):
+    """Use core's selection unchanged; do not choose another winner in the UI."""
+    selection = findings.get("clustering_selection", {}) if isinstance(findings, dict) else {}
+    by_identity = {}
+    for group in selection.get("groups", []):
+        for row in group.get("candidates", []):
+            path = str(row.get("report_path", "")).replace("\\", "/")
+            relative = "results/" + path.split("/results/", 1)[-1] if "/results/" in path else path
+            by_identity[(relative, row.get("algorithm"))] = (row, group)
+    for report in reports:
+        for visual in report.get("visuals", []):
+            if visual.get("kind") != "cluster_populations":
+                continue
+            row, group = by_identity.get((report["path"], visual.get("method_id")), ({}, {}))
+            visual["clustering_role"] = row.get("presentation_role", "alternative")
+            visual["clustering_selection_status"] = group.get("status", "abstained")
+            visual["clustering_selection_reason"] = group.get("reason", "No common evaluation contract; method scores are not ranked across reports.")
+            evaluation = row.get("evaluation") or {}
+            visual["selection_silhouette"] = evaluation.get("score")
+    return selection
+
+
+def _annotate_clustering_artifacts(artifacts, selection):
+    primary = [row for group in selection.get("groups", []) for row in group.get("candidates", [])
+               if row.get("presentation_role") == "primary"]
+    def relative(path):
+        value = str(path).replace("\\", "/")
+        return "results/" + value.split("/results/", 1)[-1] if "/results/" in value else value
+    for artifact in artifacts:
+        if artifact.get("analysis_class_id") != "clustering":
+            continue
+        sources = {relative(p) for p in artifact.get("source_report_paths", [])}
+        context = artifact.get("context", {})
+        algorithm = context.get("algorithm", context.get("method_id"))
+        matches = [row for row in primary if relative(row["report_path"]) in sources
+                   and (row["module_id"] != "alternative_clustering" or algorithm == row["algorithm"])]
+        artifact["clustering_role"] = "primary" if matches else "alternative"
 
 
 def _dccm_visuals(report: Mapping[str, object], maximum_atoms: int = 180) -> List[Dict[str, object]]:
@@ -1486,6 +1565,9 @@ def _write_portable_evidence(
             continue
         relative = str(report["path"])
         source = root / relative
+        _relative(source, root)
+        if _sha256_file(source) != report.get("sha256"):
+            raise InteractiveReportError(f"report changed during packaging: {relative}")
         copy_complete = (
             source.stat().st_size <= _MAXIMUM_PORTABLE_REPORT_BYTES
             and copied_report_bytes + source.stat().st_size
@@ -1496,6 +1578,8 @@ def _write_portable_evidence(
             destination = target / _portable_href(destination_relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
+            if _sha256_file(destination) != report.get("sha256"):
+                raise InteractiveReportError(f"report changed during copying: {relative}")
             copied_report_bytes += source.stat().st_size
             report["evidence_kind"] = "complete_json"
         else:
@@ -1573,10 +1657,12 @@ def _write_portable_evidence(
         "sampling-plan.json", "automatic-chemical-context.json",
         "conformational-views.json", "project.json", "system.json",
         "presentation-artifacts/presentation-manifest.json",
+        "experimental-after-main-contract.json",
     ):
         source = root / relative
         if not source.is_file():
             continue
+        _relative(source, root)
         destination = target / _portable_href(relative)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
@@ -1699,9 +1785,11 @@ def _collect_data(
         _report_record(path, root)
         for path in sorted((root / "results").glob("**/report.json"))
     ] if (root / "results").is_dir() else []
+    clustering_selection = _apply_clustering_selection(reports, findings)
     presentation_artifacts, omitted_presentation_figures = _presentation_records(
         root, maximum_inline_figure_bytes=maximum_inline_figure_bytes
     )
+    _annotate_clustering_artifacts(presentation_artifacts, clustering_selection)
     presentation_class_by_module = {
         str(row.get("module_id")): (
             str(row.get("analysis_class_id")),
@@ -1923,6 +2011,7 @@ def _collect_data(
         "headline_findings": headline_rows,
         "secondary_findings": secondary_rows,
         "presentation_contract": presentation_contract,
+        "clustering_selection": clustering_selection,
         "finding_metadata": {
             key: findings.get(key)
             for key in (
@@ -2022,12 +2111,12 @@ function reportForFinding(f){const p=String(f.report_path||'').replace(/^.*?resu
 function structureForModule(moduleId){return DATA.structures.find(s=>s.method_id===moduleId||s.module_id===moduleId)||null}
 function figuresForModule(moduleId){const report=DATA.reports.find(r=>r.module_id===moduleId),classId=report?.analysis_class_id;return DATA.figures.filter(f=>f.module_id===moduleId||(classId&&f.analysis_class_id===classId)).slice(0,3)}
 function findingActions(f){const r=reportForFinding(f),parts=[],exact=f.resolved_presentation_artifacts||[];if(r){const target=['pca_fes_basins','clustering_kmeans','clustering_imwkmeans','alternative_clustering','representative_frames','state_coordinate_exports'].includes(r.module_id)?'states':`analysis-${r.analysis_class_id}`;parts.push(`<button class="inline-link" data-report-view="${esc(target)}">View ${esc(target==='states'?'molecular states':r.analysis_class_title||'analysis')}</button>`)}exact.forEach(a=>{if(a.artifact_type==='structure'&&a.structure_id)parts.push(`<button class="inline-link" data-structure-id="${esc(a.structure_id)}">View representative structure</button>`);else parts.push(`<button class="inline-link" data-artifact-id="${esc(a.artifact_id)}">View ${esc(a.artifact_type)}</button>`)});if(!exact.length){const s=structureForModule(f.module_id);if(s)parts.push(`<button class="inline-link" data-structure-id="${esc(s.structure_id)}">Representative structure</button>`);figuresForModule(f.module_id).forEach((figure,index)=>parts.push(`<a class="inline-link" href="${esc(figure.href)}" target="_blank">${index?'Another figure':'View figure'}</a>`))}return parts.join('')}
-function openArtifact(artifactId){const a=(DATA.presentation_artifacts||[]).find(row=>row.artifact_id===artifactId);if(!a)return;if(a.artifact_type==='structure'&&a.structure_id){openStructure(a.structure_id);return}go(a.analysis_class_id==='qc'?'qc':`analysis-${a.analysis_class_id}`);requestAnimationFrame(()=>document.getElementById(`artifact-${artifactId}`)?.scrollIntoView({behavior:'smooth',block:'start'}))}
+function openArtifact(artifactId){const a=(DATA.presentation_artifacts||[]).find(row=>row.artifact_id===artifactId);if(!a)return;if(a.artifact_type==='structure'&&a.structure_id){openStructure(a.structure_id);return}go(a.analysis_class_id==='qc'?'qc':`analysis-${a.analysis_class_id}`);requestAnimationFrame(()=>{const el=document.getElementById(`artifact-${artifactId}`);if(el){let parent=el.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement}el.scrollIntoView({behavior:'smooth',block:'start'})}})}
 function wireActions(host){$$('[data-report-view]',host).forEach(b=>b.onclick=()=>go(b.dataset.reportView));$$('[data-structure-id]',host).forEach(b=>b.onclick=()=>openStructure(b.dataset.structureId));$$('[data-artifact-id]',host).forEach(b=>b.onclick=()=>openArtifact(b.dataset.artifactId))}
 function findingHTML(f,i){const tier=f.presentation_tier||'headline',sig=f.statistically_significant===true?badge('statistically significant after correction','sig'):'';return `<div class="finding" data-category="${esc(f.category)}" data-systems="${esc((f.system_ids||[]).join(' '))}" data-tier="${esc(tier)}" data-search="${esc(JSON.stringify(f).toLowerCase())}"><div class="rank">${esc(String(f.finding_id||i+1).replace('finding-','').replace(/^0+/,''))}</div><div><div>${esc(humanizeText(f.statement))}</div><div class="badges">${badge(tier.replaceAll('_',' '))}${badge(cleanLabel(f.category))}${badge(moduleName(f.module_id))}${sig}${(f.system_ids||[]).map(s=>badge(cleanLabel(s))).join('')}</div><div class="finding-footer"><span>Effect: ${fmt(f.effect_value)}</span>${findingActions(f)}</div></div></div>`}
 function renderFindings(){const host=$('#findings-list');host.innerHTML=DATA.findings.length?DATA.findings.map(findingHTML).join(''):'<div class="empty">No ranked findings were generated.</div>';wireActions(host);const cats=[...new Set(DATA.findings.map(f=>f.category))].sort();const systems=[...new Set(DATA.findings.flatMap(f=>f.system_ids||[]))].sort();$('#finding-category').innerHTML='<option value="">All categories</option>'+cats.map(v=>`<option>${esc(cleanLabel(v))}</option>`).join('');$('#finding-system').innerHTML='<option value="">All systems</option>'+systems.map(v=>`<option>${esc(v)}</option>`).join('');const tier=$('#finding-tier');tier.innerHTML=`<option value="headline">Headline (${DATA.headline_findings.length})</option><option value="secondary">Secondary (${DATA.secondary_findings.length})</option><option value="additional_candidate">Additional candidates (${Math.max(0,DATA.findings.length-DATA.highlighted_findings.length)})</option><option value="">All candidates (${DATA.findings.length})</option>`;const filter=()=>{const q=$('#finding-search').value.toLowerCase(),c=$('#finding-category').value,s=$('#finding-system').value,t=tier.value;let shown=0;$$('.finding',host).forEach(row=>{row.hidden=!!((q&&!row.dataset.search.includes(q))||(c&&cleanLabel(row.dataset.category)!==c)||(s&&!row.dataset.systems.split(' ').includes(s))||(t&&row.dataset.tier!==t));if(!row.hidden)shown+=1});$('#finding-summary').textContent=`Showing ${shown} of ${DATA.findings.length} ranked candidates.`};['finding-search','finding-category','finding-system','finding-tier'].forEach(id=>$(`#${id}`).oninput=filter);filter()}
 function issueHTML(i){const sev=String(i.severity||'info').toLowerCase(),source=String(i.source||'').includes('results/')?'Analysis report':cleanLabel(i.source||'');return `<div class="issue ${esc(sev)}"><strong>${esc(sev.toUpperCase())}</strong> ${i.code?`<code>${esc(i.code)}</code>`:''}<div>${esc(humanizeText(i.message||i.reason||JSON.stringify(i)))}</div><small class="muted">${esc(moduleName(i.module_id)||'')} ${esc(source)} ${esc(cleanLabel(i.location||''))}</small></div>`}
-function renderOverview(){const meta=DATA.finding_metadata||{};$('#stats').innerHTML=[['Module reports',DATA.reports.length],['Analysis classes',DATA.analysis_classes.length],['Picker-accounted modules',DATA.module_accounting.length],['Silent omissions',meta.silent_omission_count??'—'],['Headline findings',DATA.headline_findings.length],['Secondary findings',DATA.secondary_findings.length],['All candidates',DATA.findings.length]].map(([a,b])=>`<div class="stat"><strong>${fmt(b)}</strong><span>${esc(a)}</span></div>`).join('');$('#overview-finding-note').textContent=`The opening page shows the ${DATA.headline_findings.length} largest and most scientifically relevant observed differences selected by the picker. ${DATA.secondary_findings.length} additional highlights follow, and all ${DATA.findings.length} candidates remain searchable.`;const host=$('#overview-findings');host.innerHTML=DATA.headline_findings.map(findingHTML).join('')||'<div class="empty">No findings available.</div>';wireActions(host)}
+function renderOverview(){const meta=DATA.finding_metadata||{};$('#stats').innerHTML=[['Module reports',DATA.reports.length],['Analysis classes',DATA.analysis_classes.length],['Picker-accounted modules',DATA.module_accounting.length],['Silent omissions',meta.silent_omission_count??'—'],['Headline findings',DATA.headline_findings.length],['Secondary findings',DATA.secondary_findings.length],['All candidates',DATA.findings.length]].map(([a,b])=>`<div class="stat"><strong>${fmt(b)}</strong><span>${esc(a)}</span></div>`).join('');$('#overview-finding-note').textContent=`The opening page shows the ${DATA.headline_findings.length} observed results prioritized by within-family effect rank and available statistical evidence. ${DATA.secondary_findings.length} additional highlights follow, and all ${DATA.findings.length} candidates remain searchable.`;const host=$('#overview-findings');host.innerHTML=DATA.headline_findings.map(findingHTML).join('')||'<div class="empty">No findings available.</div>';wireActions(host)}
 function moduleHTML(r){const metrics=(r.key_metrics||[]).map(m=>`<div class="metric"><strong>${esc(cleanLabel(m.label))}</strong><br>${esc(fmt(m.value))}</div>`).join(''),a=DATA.module_accounting.find(x=>x.module_id===r.module_id),evidenceLabel=r.evidence_kind==='complete_json'?'Open results JSON':'Open compact results JSON',notes=(r.review_notes||[]).map(n=>issueHTML({severity:n.severity,code:n.status,message:n.statement,module_id:n.module_id})).join('');return `<details class="module-row" data-class="${esc(r.analysis_class_id)}" data-search="${esc((r.title+' '+r.context+' '+JSON.stringify(r.issues)+' '+JSON.stringify(a||{})).toLowerCase())}"><summary><span>${esc(r.title)} <small class="muted">${esc(r.context)}</small></span><span>${a?badge(cleanLabel(a.disposition)):''}${badge(r.technical_status,r.technical_status==='failed'?'severity-error':'')}</span></summary><p class="muted">${(r.size_bytes/1024).toFixed(1)} KiB · <a href="${esc(r.href)}" target="_blank">${evidenceLabel}</a></p>${a?`<p><strong>Picker accounting:</strong> ${esc(humanizeText(a.reason))} Candidates: ${fmt(a.candidate_count)}; highlighted: ${fmt(a.reported_finding_count)}.</p>`:''}<div class="metric-list">${metrics||'<span class="muted">No compact numeric metrics indexed.</span>'}</div>${(r.issues||[]).map(issueHTML).join('')}${notes}<details><summary>Indexed JSON preview</summary><pre class="json">${esc(humanizeText(JSON.stringify(r.preview,null,2)))}</pre></details>${(r.limitations||[]).length?`<details><summary>Scientific limitations</summary><ul>${r.limitations.map(x=>`<li>${esc(humanizeText(x))}</li>`).join('')}</ul></details>`:''}</details>`}
 function renderModules(){const host=$('#module-list');host.innerHTML=DATA.reports.map(moduleHTML).join('')||'<div class="empty">No module reports found.</div>';$('#module-search').oninput=()=>{const q=$('#module-search').value.toLowerCase();$$('.module-row',host).forEach(r=>r.hidden=q&&!r.dataset.search.includes(q))}}
 function renderAccounting(){const rows=DATA.module_accounting||[],host=$('#accounting-table');if(!rows.length){host.innerHTML='<div class="empty">No picker-accounting records were found.</div>';return}const cols=['module_id','review_role','report_count','candidate_count','reported_finding_count','disposition'];host.innerHTML=`<table><thead><tr>${cols.map(c=>`<th>${esc(cleanLabel(c))}</th>`).join('')}<th>Reason</th></tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(c==='module_id'?moduleName(r[c]):cleanLabel(fmt(r[c])))}</td>`).join('')}<td style="white-space:normal">${esc(humanizeText(r.reason))}</td></tr>`).join('')}</tbody></table>`}
@@ -2072,10 +2161,11 @@ function renderRMSF(v,host){const rows=v.residues||[],w=900,h=360,p=50;if(!rows.
 function renderDCCM(v,host){const m=v.matrix||[],n=m.length;if(!n){host.innerHTML='<div class="empty">No DCCM matrix.</div>';return}const c=document.createElement('canvas');c.width=Math.max(540,n*3+70);c.height=c.width;const x=c.getContext('2d'),pad=52,side=c.width-pad-18,cell=side/n;x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);m.forEach((row,i)=>row.forEach((z,j)=>{const q=Number.isFinite(z)?z:0;x.fillStyle=q<0?`rgb(${Math.round(255*(1+q))},${Math.round(255*(1+q))},255)`:`rgb(255,${Math.round(255*(1-q))},${Math.round(255*(1-q))})`;x.fillRect(pad+i*cell,pad+(n-1-j)*cell,cell+.5,cell+.5)}));x.strokeStyle='#26362f';x.strokeRect(pad,pad,side,side);x.fillStyle='#18211d';x.font='12px sans-serif';x.textAlign='center';x.fillText('Atom/residue index',pad+side/2,c.height-8);x.save();x.translate(14,pad+side/2);x.rotate(-Math.PI/2);x.fillText('Atom/residue index',0,0);x.restore();c.className='chart';host.appendChild(c);host.insertAdjacentHTML('beforeend',`<div class="chart-note">${esc(v.title)}; blue is anticorrelation and red is positive correlation. ${v.source_atom_count} source atoms; display stride ${v.display_stride}.</div>`)}
 function allVisuals(){return DATA.reports.flatMap(r=>(r.visuals||[]).map(v=>({...v,module_id:r.module_id,analysis_class_id:r.analysis_class_id,context:v.context||r.context})))}
 function drawVisualCard(v,host,rank=null){const card=document.createElement('section');card.className='card';const heading=rank?`${rank}. ${v.method_name||v.title}`:v.title;card.innerHTML=`<h3>${esc(cleanLabel(heading))}</h3><div class="chart"></div>`;host.appendChild(card);const target=$('.chart',card);target.className='';if(v.kind==='fes')renderFES(v,target);else if(v.kind==='cluster_populations')renderClusters(v,target);else if(v.kind==='rmsf')renderRMSF(v,target);else if(v.kind==='dccm')renderDCCM(v,target)}
-function renderVisuals(){const visuals=allVisuals().filter(v=>['fes','cluster_populations'].includes(v.kind));const select=$('#visual-kind'),host=$('#visual-list');select.innerHTML='<option value="">FES followed by clustering</option><option value="fes">Free-energy surfaces</option><option value="cluster_populations">Clustering, best silhouette first</option>';if(!visuals.length){select.parentElement.hidden=true;host.hidden=true;return}function draw(){const kind=select.value;host.innerHTML='';const selected=visuals.filter(v=>!kind||v.kind===kind).sort((a,b)=>{if(a.kind!==b.kind)return a.kind==='fes'?-1:1;if(a.kind==='cluster_populations')return (Number.isFinite(b.silhouette)?b.silhouette:-Infinity)-(Number.isFinite(a.silhouette)?a.silhouette:-Infinity);return String(a.title).localeCompare(String(b.title))});let clusterRank=0;selected.forEach(v=>drawVisualCard(v,host,v.kind==='cluster_populations'?++clusterRank:null))}select.oninput=draw;draw()}
+function drawVisualCollection(visuals,host){const primary=visuals.filter(v=>v.kind!=='cluster_populations'||v.clustering_role==='primary'),alternatives=visuals.filter(v=>v.kind==='cluster_populations'&&v.clustering_role!=='primary');primary.sort((a,b)=>(a.kind==='fes'?0:1)-(b.kind==='fes'?0:1)||String(a.context||a.title).localeCompare(String(b.context||b.title)));primary.forEach(v=>{if(v.kind==='cluster_populations'){const p=document.createElement('p');p.className='muted';p.textContent=`Primary partition for ${cleanLabel(v.context||'this view')}. ${v.clustering_selection_reason}${Number.isFinite(v.selection_silhouette)?` Common-evaluation silhouette ${v.selection_silhouette.toFixed(3)}.`:''}`;host.appendChild(p)}drawVisualCard(v,host)});if(alternatives.length){const details=document.createElement('details');details.className='card clustering-alternatives';details.innerHTML=`<summary>Alternative and unranked clustering results (${alternatives.length})</summary><p class="muted">All methods are retained. Only comparable evaluations can select a primary partition; a fit silhouette alone is not a physical finding.</p>`;host.appendChild(details);alternatives.sort((a,b)=>String(a.context||'').localeCompare(String(b.context||''))||String(a.method_name).localeCompare(String(b.method_name))).forEach(v=>drawVisualCard(v,details))}}
+function renderVisuals(){const visuals=allVisuals().filter(v=>['fes','cluster_populations'].includes(v.kind));const select=$('#visual-kind'),host=$('#visual-list');select.innerHTML='<option value="">FES followed by primary clustering</option><option value="fes">Free-energy surfaces</option><option value="cluster_populations">Clustering by view</option>';if(!visuals.length){select.parentElement.hidden=true;host.hidden=true;return}function draw(){host.innerHTML='';drawVisualCollection(visuals.filter(v=>!select.value||v.kind===select.value),host)}select.oninput=draw;draw()}
 function tablePreview(a){const p=a.table_preview||{},cols=p.columns||[],rows=p.rows||[];if(!cols.length)return'';return `<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${esc(cleanLabel(c))}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${p.preview_truncated?`<p class="muted">Showing the first ${rows.length} rows. Open the table for the complete data.</p>`:''}`}
-function artifactCard(a,heading='h4',withAnchor=true){const title=cleanLabel(a.title||a.name||a.purpose),id=withAnchor&&a.artifact_id?` id="artifact-${esc(a.artifact_id)}"`:'';if(a.artifact_type==='figure'||a.data_uri){const image=a.data_uri?`<img src="data:${a.data_uri}" alt="${esc(title)}">`:'<p class="muted">This figure is available as a linked file.</p>';return `<section class="figure presentation-artifact"${id}><${heading}>${esc(title)}</${heading}>${image}<p><a href="${esc(a.href)}" target="_blank">Open figure file</a></p></section>`}if(a.artifact_type==='table')return `<section class="presentation-artifact table-artifact"${id}><${heading}>${esc(title)}</${heading}>${tablePreview(a)}<p><a href="${esc(a.href)}" target="_blank">Open complete table</a></p></section>`;if(a.artifact_type==='structure')return `<section class="presentation-artifact"${id}><${heading}>${esc(title)}</${heading}><p><button class="inline-link" data-structure-id="${esc(a.structure_id)}">View representative structure</button> · <a href="${esc(a.href)}" target="_blank">Open PDB</a></p></section>`;return''}
-function renderAnalysisTabs(){const nav=$('#analysis-nav'),views=$('#analysis-views'),artifactOrder=(a,b)=>Number(Boolean(b.primary_human_output))-Number(Boolean(a.primary_human_output))||String(a.title||a.purpose).localeCompare(String(b.title||b.purpose));nav.innerHTML='';views.innerHTML='';(DATA.analysis_classes||[]).forEach(group=>{const name=`analysis-${group.class_id}`,button=document.createElement('button');button.dataset.view=name;button.textContent=group.title;button.onclick=()=>go(name);nav.appendChild(button);const section=document.createElement('section');section.id=`view-${name}`;section.className='view';const reports=DATA.reports.filter(r=>r.analysis_class_id===group.class_id),artifacts=(DATA.presentation_artifacts||[]).filter(a=>a.analysis_class_id===group.class_id),legacyFigures=DATA.figures.filter(f=>!f.artifact_id&&f.analysis_class_id===group.class_id),visuals=allVisuals().filter(v=>v.analysis_class_id===group.class_id);const figures=artifacts.filter(a=>a.artifact_type==='figure').sort(artifactOrder),tables=artifacts.filter(a=>a.artifact_type==='table').sort(artifactOrder),structures=artifacts.filter(a=>a.artifact_type==='structure').sort(artifactOrder);section.innerHTML=`<section class="card"><h2>${esc(group.title)}</h2><div class="analysis-visuals"></div></section>${figures.length?`<section class="card"><h3>Figures</h3><div class="grid analysis-figures">${figures.map(a=>artifactCard(a)).join('')}</div></section>`:''}${tables.length?`<section class="card"><h3>Tables</h3><div class="artifact-stack">${tables.map(a=>artifactCard(a)).join('')}</div></section>`:''}${structures.length?`<section class="card"><h3>Representative structures</h3><div class="artifact-stack">${structures.map(a=>artifactCard(a)).join('')}</div></section>`:''}${legacyFigures.length?`<section class="card"><h3>Additional figures</h3><div class="grid analysis-figures">${legacyFigures.map(f=>artifactCard(f)).join('')}</div></section>`:''}<section class="card"><h3>Reports</h3>${reports.map(moduleHTML).join('')||'<p class="muted">No JSON module report was indexed for this artifact group.</p>'}</section>`;views.appendChild(section);const visualHost=$('.analysis-visuals',section);const ordered=visuals.sort((a,b)=>a.kind==='cluster_populations'&&b.kind==='cluster_populations'?((b.silhouette??-Infinity)-(a.silhouette??-Infinity)):String(a.title).localeCompare(String(b.title)));ordered.forEach((v,i)=>drawVisualCard(v,visualHost,v.kind==='cluster_populations'?i+1:null));if(!ordered.length)visualHost.innerHTML='<p class="muted">Figures and tables for this analysis are listed below.</p>';wireActions(section)})}
+function artifactCard(a,heading='h4',withAnchor=true){if(a.clustering_role==='alternative'){const item={...a};delete item.clustering_role;return `<details class="card clustering-alternative-artifact"><summary>Alternative: ${esc(cleanLabel(a.title||a.purpose))}</summary>${artifactCard(item,heading,withAnchor)}</details>`}const title=cleanLabel(a.title||a.name||a.purpose),id=withAnchor&&a.artifact_id?` id="artifact-${esc(a.artifact_id)}"`:'';if(a.artifact_type==='figure'||a.data_uri){const image=a.data_uri?`<img src="data:${a.data_uri}" alt="${esc(title)}">`:'<p class="muted">This figure is available as a linked file.</p>';return `<section class="figure presentation-artifact"${id}><${heading}>${esc(title)}</${heading}>${image}<p><a href="${esc(a.href)}" target="_blank">Open figure file</a></p></section>`}if(a.artifact_type==='table')return `<section class="presentation-artifact table-artifact"${id}><${heading}>${esc(title)}</${heading}>${tablePreview(a)}<p><a href="${esc(a.href)}" target="_blank">Open complete table</a></p></section>`;if(a.artifact_type==='structure')return `<section class="presentation-artifact"${id}><${heading}>${esc(title)}</${heading}><p><button class="inline-link" data-structure-id="${esc(a.structure_id)}">View representative structure</button> · <a href="${esc(a.href)}" target="_blank">Open PDB</a></p></section>`;return''}
+function renderAnalysisTabs(){const nav=$('#analysis-nav'),views=$('#analysis-views'),artifactOrder=(a,b)=>Number(Boolean(b.primary_human_output))-Number(Boolean(a.primary_human_output))||String(a.title||a.purpose).localeCompare(String(b.title||b.purpose));nav.innerHTML='';views.innerHTML='';(DATA.analysis_classes||[]).forEach(group=>{const name=`analysis-${group.class_id}`,button=document.createElement('button');button.dataset.view=name;button.textContent=group.title;button.onclick=()=>go(name);nav.appendChild(button);const section=document.createElement('section');section.id=`view-${name}`;section.className='view';const reports=DATA.reports.filter(r=>r.analysis_class_id===group.class_id),artifacts=(DATA.presentation_artifacts||[]).filter(a=>a.analysis_class_id===group.class_id),legacyFigures=DATA.figures.filter(f=>!f.artifact_id&&f.analysis_class_id===group.class_id),visuals=allVisuals().filter(v=>v.analysis_class_id===group.class_id);const figures=artifacts.filter(a=>a.artifact_type==='figure').sort(artifactOrder),tables=artifacts.filter(a=>a.artifact_type==='table').sort(artifactOrder),structures=artifacts.filter(a=>a.artifact_type==='structure').sort(artifactOrder);section.innerHTML=`<section class="card"><h2>${esc(group.title)}</h2><div class="analysis-visuals"></div></section>${figures.length?`<section class="card"><h3>Figures</h3><div class="grid analysis-figures">${figures.map(a=>artifactCard(a)).join('')}</div></section>`:''}${tables.length?`<section class="card"><h3>Tables</h3><div class="artifact-stack">${tables.map(a=>artifactCard(a)).join('')}</div></section>`:''}${structures.length?`<section class="card"><h3>Representative structures</h3><div class="artifact-stack">${structures.map(a=>artifactCard(a)).join('')}</div></section>`:''}${legacyFigures.length?`<section class="card"><h3>Additional figures</h3><div class="grid analysis-figures">${legacyFigures.map(f=>artifactCard(f)).join('')}</div></section>`:''}<section class="card"><h3>Reports</h3>${reports.map(moduleHTML).join('')||'<p class="muted">No JSON module report was indexed for this artifact group.</p>'}</section>`;views.appendChild(section);const visualHost=$('.analysis-visuals',section);const ordered=visuals.sort((a,b)=>a.kind==='cluster_populations'&&b.kind==='cluster_populations'?((b.silhouette??-Infinity)-(a.silhouette??-Infinity)):String(a.title).localeCompare(String(b.title)));drawVisualCollection(ordered,visualHost);if(!ordered.length)visualHost.innerHTML='<p class="muted">Figures and tables for this analysis are listed below.</p>';wireActions(section)})}
 function renderFigures(){const allowed=new Set(['free-energy','clustering']),classRank={'free-energy':0,'clustering':1};const stateArtifactOrder=(a,b)=>(classRank[a.analysis_class_id]??9)-(classRank[b.analysis_class_id]??9)||Number(Boolean(b.primary_human_output))-Number(Boolean(a.primary_human_output))||String(cleanLabel(a.title||a.purpose)).localeCompare(String(cleanLabel(b.title||b.purpose)));const figures=DATA.figures.filter(f=>allowed.has(f.analysis_class_id)).sort(stateArtifactOrder);const host=$('#figure-list');host.innerHTML=figures.map(f=>artifactCard(f,'h3',false)).join('')||'<div class="empty">No molecular-state figure files were found.</div>';wireActions(host)}
 function renderResources(){const rows=DATA.resources||[],host=$('#resource-table');if(!rows.length){host.innerHTML='<div class="empty">No consolidated resource/frame table was found.</div>';return}const wanted=['module_id','technical_status','total_cpu_seconds','wall_seconds','maximum_resident_memory_mib','selected_source_physical_frames','analysis_frame_stride','basis_frame_stride','symmetry_expanded_observations','model_fit_observations','full_assignment_observations'];const cols=wanted.filter(k=>rows.some(r=>k in r));host.innerHTML=`<table><thead><tr>${cols.map(c=>`<th>${esc(cleanLabel(c))}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(c==='module_id'?moduleName(r[c]):fmt(r[c]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`}
 function renderQC(){const host=$('#qc-list');host.innerHTML=DATA.qc_issues.map(issueHTML).join('')||'<div class="empty">No QC issues were indexed.</div>';const picker=$('#picker-qc-list');picker.innerHTML=DATA.picker_qc_records.map(r=>issueHTML({severity:r.severity,code:r.status,message:r.statement,module_id:r.module_id,source:r.report_path})).join('')||'<div class="empty">No additional QC records were reported.</div>';const artifacts=(DATA.presentation_artifacts||[]).filter(a=>a.analysis_class_id==='qc'),artifactHost=$('#qc-artifacts');artifactHost.innerHTML=artifacts.map(a=>artifactCard(a,'h3')).join('')||'<div class="empty">No QC figure or table was generated.</div>';wireActions(artifactHost);$('#provenance-links').innerHTML=Object.entries(DATA.raw_links||{}).map(([label,href])=>`<a href="${esc(href)}" target="_blank">${esc(label)}</a>`).join(' · ');$('#provenance-json').textContent=humanizeText(JSON.stringify({module_coverage:DATA.module_coverage,chemical_context:DATA.chemical_context,conformational_views:DATA.conformational_views,sampling_plan:DATA.sampling_plan,configuration:DATA.configuration,project_manifest:DATA.project_manifest,system_manifest:DATA.system_manifest,preflight:DATA.preflight,omitted_structures:DATA.omitted_structures,omitted_figures:DATA.omitted_figures},null,2))}
@@ -2113,7 +2203,9 @@ def _render_html(data: Mapping[str, object]) -> str:
         separators=(",", ":"),
         allow_nan=False,
     )
-    encoded = encoded.replace("</script", "<\\/script").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    encoded = (encoded.replace("&", "\\u0026").replace("<", "\\u003c")
+               .replace(">", "\\u003e").replace("\u2028", "\\u2028")
+               .replace("\u2029", "\\u2029"))
     title = html.escape(str(data["title"]))
     systems = ", ".join(data.get("system_ids", []))
     system_line = f'<div class="muted">{html.escape(systems)}</div>' if systems else ""
@@ -2121,12 +2213,12 @@ def _render_html(data: Mapping[str, object]) -> str:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; connect-src 'none'; media-src 'self'">
 <title>{title} — interactive molecular analysis</title><style>{_CSS}</style></head>
-<body><div class="shell"><aside class="sidebar"><div class="brand">Salsbury MD Analysis</div><div class="subtitle">Interactive results · v0.1.3</div><nav class="nav">
+<body><div class="shell"><aside class="sidebar"><div class="brand">Salsbury MD Analysis</div><div class="subtitle">Interactive results · v{html.escape(_GENERATOR_VERSION)}</div><nav class="nav">
 <button data-view="overview">Overview</button><button data-view="findings">Key findings</button><button data-view="states">Molecular states & figures</button><button data-view="molecules">Molecular structures</button><div class="nav-heading">Analysis results</div><div id="analysis-nav"></div><button data-view="analyses">All reports</button><button data-view="resources">Resources & sampling</button><button data-view="qc">QC & provenance</button></nav></aside>
 <main class="main"><div class="topline"><div><div class="eyebrow">Analysis campaign</div><h1>{title}</h1>{system_line}</div><span class="status">{html.escape(str(data['technical_status']))}</span></div>
 <section id="view-overview" class="view"><div id="stats" class="stats"></div><section class="card"><h2>Highest-priority findings</h2><p id="overview-finding-note" class="muted"></p><div id="overview-findings"></div><p><button onclick="go('findings')">Review all ranked findings</button></p></section></section>
-<section id="view-findings" class="view"><section class="card"><h2>Ranked findings</h2><p class="muted">The opening page contains the largest and most scientifically relevant observed differences selected by the picker. Additional highlights and every other candidate remain searchable here.</p><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-tier"></select><select id="finding-category"></select><select id="finding-system"></select></div><p id="finding-summary" class="muted"></p><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
-<section id="view-states" class="view"><section class="card"><h2>Molecular states & generated figures</h2><p class="muted">Free-energy surfaces appear first. When numerical clustering records are available, methods follow in descending silhouette-score order with per-system populations and representative structures.</p><div class="visual-controls"><select id="visual-kind"></select></div></section><div id="visual-list"></div><h2>State populations and comparison figures</h2><div id="figure-list" class="grid"></div></section>
+<section id="view-findings" class="view"><section class="card"><h2>Ranked findings</h2><p class="muted">The opening page contains the observed results prioritized by within-family effect rank and available statistical evidence. Additional highlights and every other candidate remain searchable here.</p><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-tier"></select><select id="finding-category"></select><select id="finding-system"></select></div><p id="finding-summary" class="muted"></p><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
+<section id="view-states" class="view"><section class="card"><h2>Molecular states & generated figures</h2><p class="muted">Free-energy surfaces appear first, followed by one primary clustering partition per comparable view. Expand alternatives to inspect every method, its populations, and representative structures.</p><div class="visual-controls"><select id="visual-kind"></select></div></section><div id="visual-list"></div><h2>State populations and comparison figures</h2><div id="figure-list" class="grid"></div></section>
 <section id="view-molecules" class="view"><section class="card"><h2>Representative molecular structures</h2><p class="muted">Each packaged PDB retains all non-solvent atoms. The default view uses a VMD-style polymer cartoon, bonded ligands and cofactors, and space-filling ions.</p><div class="molecule-layout"><div class="viewer"><div class="viewer-tools"><select id="viewer-representation"><option value="overview">Cartoon + ligands/cofactors + ions</option><option value="all">All non-solvent atoms</option><option value="backbone">Polymer cartoon</option><option value="hetero">Ligands, cofactors and ions</option></select><select id="viewer-color"><option value="chain">Color by chain</option><option value="element">Color by element</option><option value="bfactor">Color by B factor</option></select><label style="color:white"><input id="viewer-h" type="checkbox"> H</label><input id="viewer-search" placeholder="A:CYS54:SG"><button id="viewer-reset">Reset</button></div><div id="molecule-viewer" class="molecule-viewer"></div><div id="viewer-info" class="viewer-info"></div></div><div><h3 id="structure-title">Structures</h3><div id="structure-list" class="structure-list"></div></div></div></section></section>
 <div id="analysis-views"></div>
 <section id="view-analyses" class="view"><section class="card"><h2>All reports</h2><p class="muted">Every indexed module is listed whether or not it produced a ranked finding.</p><div class="filters"><input id="module-search" placeholder="Search reports and issues"></div><div id="module-list"></div></section></section>
@@ -2151,7 +2243,35 @@ def _validate_existing(target: Path) -> Dict[str, object]:
         raise InteractiveReportError(
             f"existing interactive report is incomplete or hash-mismatched: {target}"
         )
-    return {**manifest, "reused": True}
+    records = manifest.get("portable_evidence_records")
+    if not isinstance(records, list) or len(records) != manifest.get("portable_evidence_count"):
+        raise InteractiveReportError("existing report lacks a complete portable evidence manifest")
+    seen = set()
+    source_changes = []
+    for record in records:
+        name = record.get("path") if isinstance(record, dict) else None
+        if not isinstance(name, str) or name in seen:
+            raise InteractiveReportError("invalid or duplicate packaged evidence path")
+        seen.add(name)
+        candidate = (target / name).resolve(strict=False)
+        if target.resolve() not in candidate.parents or not candidate.is_file():
+            raise InteractiveReportError(f"missing or outside-root packaged evidence: {name}")
+        if _sha256_file(candidate) != record.get("sha256"):
+            raise InteractiveReportError(f"packaged evidence hash mismatch: {name}")
+        source_name = record.get("source_path")
+        if isinstance(source_name, str):
+            source = target.parent / source_name
+            try:
+                _relative(source, target.parent)
+                unchanged = source.is_file() and _sha256_file(source) == record.get("source_sha256")
+            except InteractiveReportError:
+                unchanged = False
+            if not unchanged:
+                source_changes.append(source_name)
+    return {**manifest, "reused": True, "output_directory": str(target),
+            "source_snapshot_status": "changed" if source_changes else "unchanged",
+            "changed_source_paths": sorted(set(source_changes)),
+            "reuse_notice": "Existing immutable snapshot validated. Use a new output name to rebuild changed sources."}
 
 
 def build_interactive_report(

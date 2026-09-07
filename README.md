@@ -18,6 +18,10 @@ For a local candidate checkout, install the core checkout first, then run
 `python -m pip install .` here. The published-release commands below install
 the older releases, not these candidate changes.
 
+The candidate has installed-package tests on Linux and macOS, plus offline
+Chrome checks on macOS. WSL2 testing is deferred because no Windows test host
+is available; native Windows execution is unsupported.
+
 Current releases are GitHub source distributions. This command installs both
 without making source checkouts:
 

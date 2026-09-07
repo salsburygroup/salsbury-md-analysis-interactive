@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  compatibility:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -21,7 +21,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install test tools and package
         run: |
-          python -m pip install --upgrade pip build ijson
+          python -m pip install --upgrade pip build ijson packaging
           python -m pip install --pre "salsbury-md-analysis @ git+https://github.com/salsburygroup/salsbury-md-analysis.git@${{ matrix.core-ref }}" .
           python -m pip check
       - name: Unit tests
@@ -43,3 +43,19 @@ jobs:
           python -m playwright install --with-deps chromium
           cd "$RUNNER_TEMP"
           PYTHONPATH="$GITHUB_WORKSPACE/tests" python -m unittest test_browser -v
+
+  # Keep the protected branch's existing check names. Every gate requires the
+  # complete main/experimental compatibility matrix, including wheel and browser
+  # checks, to pass; a skipped, failed, or canceled matrix cannot satisfy it.
+  test:
+    if: always()
+    needs: compatibility
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Require the complete compatibility matrix
+        env:
+          COMPATIBILITY_RESULT: ${{ needs.compatibility.result }}
+        run: test "$COMPATIBILITY_RESULT" = success

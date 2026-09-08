@@ -1,5 +1,12 @@
 # Browse the NEMO zinc-finger tutorial results
 
+To add coordinate-derived illustrations beside reader findings after the
+analysis, follow [Molecular panels](../../docs/MOLECULAR_PANELS.md). Use the
+saved NEMO state assignments to select frames, retain their source identities,
+and include only Zn ions supported by the state-specific ion-stability result.
+This optional rendering step uses existing results; it does not run the
+trajectory analysis again.
+
 This walkthrough starts with the simulation files in the core package's NEMO
 tutorial and ends with a self-contained HTML report. The core package performs
 the analysis. The interactive package reads the completed result directory.

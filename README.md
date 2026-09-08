@@ -23,6 +23,10 @@ finishes to browse its results.
 
 ## Install
 
+For coordinate-derived figures beside selected findings, see the optional
+[molecular-panel renderer](docs/MOLECULAR_PANELS.md). It renders specified PDBs
+and saves their source identities and an offline view; it does not rerun analyses.
+
 The unreleased 0.1.4rc1 candidate uses the core candidate's shared clustering
 selection. Install its wheel alongside main 0.1.3rc1 or experimental 0.2.0a3.
 For a local candidate checkout, install the core checkout first, then run

@@ -1652,7 +1652,12 @@ def _write_portable_evidence(
         })
 
     for relative in (
-        "prioritized_findings.json", "analysis_resource_and_frame_table.json",
+        "prioritized_findings.json", "prioritized_findings.csv",
+        "prioritized_findings.html", "prioritized_findings.md",
+        "prioritized_findings_secondary.html", "prioritized_findings_secondary.md",
+        "prioritized_findings_details.md", "prioritized_findings_qc.md",
+        "finding_evidence.html", "finding_evidence.csv", "finding_reader_report_checks.json",
+        "analysis_resource_and_frame_table.json",
         "module-coverage.json", "analysis-config.json", "preflight.report.json",
         "sampling-plan.json", "automatic-chemical-context.json",
         "conformational-views.json", "project.json", "system.json",
@@ -2007,6 +2012,14 @@ def _collect_data(
         "system_ids": _system_ids(system, project),
         "status_counts": status_counts,
         "findings": finding_rows,
+        "reader_report_href": (
+            _portable_href("prioritized_findings.html")
+            if all((root / name).is_file() for name in (
+                "prioritized_findings.html", "prioritized_findings_secondary.html",
+                "prioritized_findings_details.md", "prioritized_findings_qc.md",
+                "finding_evidence.html", "finding_evidence.csv", "prioritized_findings.csv",
+            )) else None
+        ),
         "highlighted_findings": highlighted_finding_rows,
         "headline_findings": headline_rows,
         "secondary_findings": secondary_rows,
@@ -2207,6 +2220,11 @@ def _render_html(data: Mapping[str, object]) -> str:
                .replace(">", "\\u003e").replace("\u2028", "\\u2028")
                .replace("\u2029", "\\u2029"))
     title = html.escape(str(data["title"]))
+    reader_report_link = (
+        '<p><a href="' + html.escape(str(data["reader_report_href"]), quote=True) +
+        '">Read the figure-led findings summary</a></p>'
+        if data.get("reader_report_href") else ""
+    )
     systems = ", ".join(data.get("system_ids", []))
     system_line = f'<div class="muted">{html.escape(systems)}</div>' if systems else ""
     return f"""<!doctype html>
@@ -2216,7 +2234,7 @@ def _render_html(data: Mapping[str, object]) -> str:
 <body><div class="shell"><aside class="sidebar"><div class="brand">Salsbury MD Analysis</div><div class="subtitle">Interactive results · v{html.escape(_GENERATOR_VERSION)}</div><nav class="nav">
 <button data-view="overview">Overview</button><button data-view="findings">Key findings</button><button data-view="states">Molecular states & figures</button><button data-view="molecules">Molecular structures</button><div class="nav-heading">Analysis results</div><div id="analysis-nav"></div><button data-view="analyses">All reports</button><button data-view="resources">Resources & sampling</button><button data-view="qc">QC & provenance</button></nav></aside>
 <main class="main"><div class="topline"><div><div class="eyebrow">Analysis campaign</div><h1>{title}</h1>{system_line}</div><span class="status">{html.escape(str(data['technical_status']))}</span></div>
-<section id="view-overview" class="view"><div id="stats" class="stats"></div><section class="card"><h2>Highest-priority findings</h2><p id="overview-finding-note" class="muted"></p><div id="overview-findings"></div><p><button onclick="go('findings')">Review all ranked findings</button></p></section></section>
+<section id="view-overview" class="view"><div id="stats" class="stats"></div><section class="card"><h2>Highest-priority findings</h2>{reader_report_link}<p id="overview-finding-note" class="muted"></p><div id="overview-findings"></div><p><button onclick="go('findings')">Review all ranked findings</button></p></section></section>
 <section id="view-findings" class="view"><section class="card"><h2>Ranked findings</h2><p class="muted">The opening page contains the observed results prioritized by within-family effect rank and available statistical evidence. Additional highlights and every other candidate remain searchable here.</p><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-tier"></select><select id="finding-category"></select><select id="finding-system"></select></div><p id="finding-summary" class="muted"></p><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
 <section id="view-states" class="view"><section class="card"><h2>Molecular states & generated figures</h2><p class="muted">Free-energy surfaces appear first, followed by one primary clustering partition per comparable view. Expand alternatives to inspect every method, its populations, and representative structures.</p><div class="visual-controls"><select id="visual-kind"></select></div></section><div id="visual-list"></div><h2>State populations and comparison figures</h2><div id="figure-list" class="grid"></div></section>
 <section id="view-molecules" class="view"><section class="card"><h2>Representative molecular structures</h2><p class="muted">Each packaged PDB retains all non-solvent atoms. The default view uses a VMD-style polymer cartoon, bonded ligands and cofactors, and space-filling ions.</p><div class="molecule-layout"><div class="viewer"><div class="viewer-tools"><select id="viewer-representation"><option value="overview">Cartoon + ligands/cofactors + ions</option><option value="all">All non-solvent atoms</option><option value="backbone">Polymer cartoon</option><option value="hetero">Ligands, cofactors and ions</option></select><select id="viewer-color"><option value="chain">Color by chain</option><option value="element">Color by element</option><option value="bfactor">Color by B factor</option></select><label style="color:white"><input id="viewer-h" type="checkbox"> H</label><input id="viewer-search" placeholder="A:CYS54:SG"><button id="viewer-reset">Reset</button></div><div id="molecule-viewer" class="molecule-viewer"></div><div id="viewer-info" class="viewer-info"></div></div><div><h3 id="structure-title">Structures</h3><div id="structure-list" class="structure-list"></div></div></div></section></section>

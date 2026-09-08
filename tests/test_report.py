@@ -14,6 +14,23 @@ from salsbury_md_analysis_interactive.report import (
 
 
 class InteractiveReportTests(unittest.TestCase):
+    def test_reader_summary_and_complete_candidate_csv_are_packaged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self._root(temporary)
+            names = (
+                "prioritized_findings.html", "prioritized_findings.md",
+                "prioritized_findings_secondary.html", "prioritized_findings_secondary.md",
+                "prioritized_findings_details.md", "prioritized_findings_qc.md",
+                "finding_evidence.html", "finding_evidence.csv", "prioritized_findings.csv",
+            )
+            for name in names:
+                (root / name).write_text("Complete retained evidence: " + name)
+            result = build_interactive_report(root)
+            target = root / "interactive-report"
+            for name in names:
+                self.assertEqual((target / "evidence" / name).read_bytes(), (root / name).read_bytes())
+            self.assertIn('href="evidence/prioritized_findings.html"', (target / "index.html").read_text())
+
     def test_core_partition_selection_is_preserved_not_rescored_by_viewer(self):
         from salsbury_md_analysis_interactive.report import _apply_clustering_selection
         reports = [{"path":"results/view/alternative-clustering/report.json", "visuals":[

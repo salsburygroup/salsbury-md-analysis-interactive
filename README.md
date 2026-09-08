@@ -62,6 +62,13 @@ fails closed instead of being overwritten.
 
 ## What the report shows
 
+When the core run includes the figure-led findings summary, the opening page
+links to it. The viewer packages that summary, its secondary findings, complete
+artifact index, and full candidate CSV beside the figures, tables, and structures.
+These links work after downloading and extracting the interactive report.
+Summary formatting does not change the ranking or remove any candidate or
+analysis artifact. Older runs without this summary keep the existing dashboard.
+
 The browser opens with the picker’s prioritized findings. A finding links to
 its analysis tab and, when available, to a figure or representative structure.
 Free-energy surfaces come first in the molecular-states view. One primary

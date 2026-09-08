@@ -1,5 +1,16 @@
 # Salsbury MD Analysis Interactive
 
+Reports with a hash-verified scientific summary open on that summary: the
+question, systems, quantitative findings, and supporting figures. Use the
+sidebar to inspect secondary findings, every candidate, all analysis classes,
+structures, QC, and resource accounting. The selective opening does not prune
+the supporting archive. Older reports without a reader summary retain the
+overview screen.
+
+The viewer imports only non-executable report markup and local evidence links.
+`finding_reader_review.md`, under QC and provenance, lists missing reporting
+context or structural evidence separately from the scientific narrative.
+
 `salsbury-md-analysis-interactive` is the optional results browser for
 [`salsbury-md-analysis`](https://github.com/salsburygroup/salsbury-md-analysis).
 It turns a completed analysis directory into a self-contained HTML report with

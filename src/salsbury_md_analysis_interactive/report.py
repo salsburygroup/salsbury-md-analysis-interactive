@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
 from . import __version__
+from .reader import reader_panel
 
 class InteractiveReportError(ValueError):
     """Raised when an interactive result cannot preserve source evidence."""
@@ -1656,7 +1657,7 @@ def _write_portable_evidence(
         "prioritized_findings.html", "prioritized_findings.md",
         "prioritized_findings_secondary.html", "prioritized_findings_secondary.md",
         "prioritized_findings_details.md", "prioritized_findings_qc.md",
-        "finding_evidence.html", "finding_evidence.csv", "finding_reader_report_checks.json",
+        "finding_evidence.html", "finding_evidence.csv", "finding_reader_report_checks.json", "finding_reader_review.md",
         "analysis_resource_and_frame_table.json",
         "module-coverage.json", "analysis-config.json", "preflight.report.json",
         "sampling-plan.json", "automatic-chemical-context.json",
@@ -2012,6 +2013,7 @@ def _collect_data(
         "system_ids": _system_ids(system, project),
         "status_counts": status_counts,
         "findings": finding_rows,
+        "reader_report_html": reader_panel(root),
         "reader_report_href": (
             _portable_href("prioritized_findings.html")
             if all((root / name).is_file() for name in (
@@ -2075,6 +2077,7 @@ def _collect_data(
             label: _portable_href(relative)
             for label, relative in {
                 "Prioritized findings": "prioritized_findings.json",
+                "Reader report review": "finding_reader_review.md",
                 "Resource and frame table": "analysis_resource_and_frame_table.json",
                 "Module coverage": "module-coverage.json",
                 "Resolved configuration": "analysis-config.json",
@@ -2117,7 +2120,7 @@ const DISPLAY_TERMS=DATA.display_terms||{};
 const humanizeText=v=>{let text=String(v??'');Object.entries(DISPLAY_TERMS).sort((a,b)=>b[0].length-a[0].length).forEach(([raw,label])=>{const variants=[raw,raw.replace(/[_-]+/g,' ')];variants.forEach(value=>{const token=value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');text=text.replace(new RegExp(token,'gi'),label)})});return text};
 const cleanLabel=v=>humanizeText(String(v??'').replace(/_+/g,' ')).replace(/\s+/g,' ').trim();
 const moduleName=id=>DATA.reports.find(r=>r.module_id===id)?.title||cleanLabel(id);
-function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));location.hash=name;window.scrollTo(0,0);if(name==='molecules'&&molecular.viewer)requestAnimationFrame(()=>{molecular.viewer.resize();molecular.viewer.render()})}
+function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));document.body.dataset.view=name;location.hash=name;window.scrollTo(0,0);if(name==='molecules'&&molecular.viewer)requestAnimationFrame(()=>{molecular.viewer.resize();molecular.viewer.render()})}
 $$('.nav button').forEach(b=>b.onclick=()=>go(b.dataset.view));
 function badge(text,cls=''){return `<span class="badge ${cls}">${esc(text)}</span>`}
 function reportForFinding(f){const p=String(f.report_path||'').replace(/^.*?results\//,'results/');return DATA.reports.find(r=>r.path===p)||DATA.reports.find(r=>r.module_id===f.module_id)}
@@ -2198,7 +2201,7 @@ function applyMolecularStyle(){if(!molecular.viewer||!molecular.model)return;con
 function loadStructure(index){const s=DATA.structures[index];if(!s||!molecular.viewer)return;molecular.index=index;molecular.viewer.removeAllModels();molecular.model=molecular.viewer.addModel(s.pdb_text,'pdb',{keepH:true});molecular.viewer.setClickable({},true,(atom)=>{$('#viewer-info').textContent=`${atom.chain||'_'}:${atom.resn}${atom.resi}:${atom.atom} · ${atom.elem} · B ${Number(atom.b||0).toFixed(2)}`});$('#structure-title').textContent=cleanLabel(s.name);$$('.structure-item').forEach((e,i)=>e.classList.toggle('active',i===index));applyMolecularStyle();molecular.viewer.zoomTo();molecular.viewer.render()}
 function openStructure(structureId){const index=DATA.structures.findIndex(s=>s.structure_id===structureId);if(index<0)return;go('molecules');loadStructure(index)}
 function renderMolecules(){const list=$('#structure-list'),structureSize=s=>s.model_count>1?`${fmt(s.atoms_per_model??s.minimum_atoms_per_model)}${s.atoms_per_model?'':'–'+fmt(s.maximum_atoms_per_model)} atoms per frame · ${fmt(s.model_count)} frames`:`${fmt(s.atom_count)} atoms`;list.innerHTML=DATA.structures.map((s,i)=>`<div class="structure-item" data-index="${i}"><strong>${esc(cleanLabel(s.name))}</strong><small>${esc(s.system_id||moduleName(s.module_id)||'Representative structure')} · ${structureSize(s)} · <a href="${esc(s.href)}" target="_blank">Open PDB</a></small></div>`).join('')||'<div class="empty">No PDB representative structures were found.</div>';$$('.structure-item',list).forEach(e=>e.addEventListener('click',ev=>{if(ev.target.tagName!=='A')loadStructure(+e.dataset.index)}));if(typeof $3Dmol==='undefined'){$('#viewer-info').textContent='The embedded molecular renderer could not be loaded.';return}molecular.viewer=$3Dmol.createViewer($('#molecule-viewer'),{backgroundColor:'#000000',antialias:true});['viewer-representation','viewer-color','viewer-h'].forEach(id=>{const control=$(`#${id}`);control.addEventListener('change',applyMolecularStyle)});$('#viewer-search').addEventListener('change',applyMolecularStyle);$('#viewer-reset').addEventListener('click',()=>loadStructure(molecular.index));if(DATA.structures.length)loadStructure(0);if('ResizeObserver' in window)new ResizeObserver(()=>{molecular.viewer.resize();molecular.viewer.render()}).observe($('#molecule-viewer'))}
-renderAnalysisTabs();renderOverview();renderFindings();renderModules();renderAccounting();renderVisuals();renderFigures();renderResources();renderQC();renderMolecules();go((location.hash||'#overview').slice(1));
+renderAnalysisTabs();renderOverview();renderFindings();renderModules();renderAccounting();renderVisuals();renderFigures();renderResources();renderQC();renderMolecules();go((location.hash||(DATA.reader_report_html?'#reader':'#overview')).slice(1));
 """
 
 
@@ -2220,6 +2223,11 @@ def _render_html(data: Mapping[str, object]) -> str:
                .replace(">", "\\u003e").replace("\u2028", "\\u2028")
                .replace("\u2029", "\\u2029"))
     title = html.escape(str(data["title"]))
+    reader_nav = '<button data-view="reader">Scientific report</button>' if data.get("reader_report_html") else ''
+    reader_section = ('<section id="view-reader" class="view"><p><a href="evidence/prioritized_findings.html">Open standalone report</a> · '
+                      '<a href="evidence/prioritized_findings_secondary.html">Secondary findings</a> · '
+                      '<a href="evidence/finding_evidence.html">Complete figures, tables and data</a></p><div class="card reader-report">' +
+                      str(data["reader_report_html"]) + '</div></section>') if data.get("reader_report_html") else ''
     reader_report_link = (
         '<p><a href="' + html.escape(str(data["reader_report_href"]), quote=True) +
         '">Read the figure-led findings summary</a></p>'
@@ -2230,10 +2238,22 @@ def _render_html(data: Mapping[str, object]) -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; connect-src 'none'; media-src 'self'">
-<title>{title} — interactive molecular analysis</title><style>{_CSS}</style></head>
+<title>{title} — interactive molecular analysis</title><style>{_CSS}
+body[data-view="reader"] .topline{{display:none}}
+.reader-report{{font-size:17px;line-height:1.6;max-width:1120px;margin:auto}}
+.reader-report h1{{border-bottom:4px solid #9E7E38;padding-bottom:14px}}
+.reader-report h2{{font-size:1.4rem;line-height:1.3}}
+.reader-report article,.reader-report section{{margin:30px 0}}
+.reader-report figure{{margin:20px 0}}.reader-report img{{max-width:100%;height:auto}}
+.reader-report figcaption{{color:#53565A;font-size:.94rem}}
+.reader-report table{{display:block;max-width:100%;overflow:auto;margin:16px 0;border-collapse:collapse}}
+.reader-report th,.reader-report td{{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid #ddd}}
+.reader-report th{{background:#CEB888;color:#000}}
+</style></head>
 <body><div class="shell"><aside class="sidebar"><div class="brand">Salsbury MD Analysis</div><div class="subtitle">Interactive results · v{html.escape(_GENERATOR_VERSION)}</div><nav class="nav">
-<button data-view="overview">Overview</button><button data-view="findings">Key findings</button><button data-view="states">Molecular states & figures</button><button data-view="molecules">Molecular structures</button><div class="nav-heading">Analysis results</div><div id="analysis-nav"></div><button data-view="analyses">All reports</button><button data-view="resources">Resources & sampling</button><button data-view="qc">QC & provenance</button></nav></aside>
+{reader_nav}<button data-view="overview">Overview</button><button data-view="findings">Key findings</button><button data-view="states">Molecular states & figures</button><button data-view="molecules">Molecular structures</button><div class="nav-heading">Analysis results</div><div id="analysis-nav"></div><button data-view="analyses">All reports</button><button data-view="resources">Resources & sampling</button><button data-view="qc">QC & provenance</button></nav></aside>
 <main class="main"><div class="topline"><div><div class="eyebrow">Analysis campaign</div><h1>{title}</h1>{system_line}</div><span class="status">{html.escape(str(data['technical_status']))}</span></div>
+{reader_section}
 <section id="view-overview" class="view"><div id="stats" class="stats"></div><section class="card"><h2>Highest-priority findings</h2>{reader_report_link}<p id="overview-finding-note" class="muted"></p><div id="overview-findings"></div><p><button onclick="go('findings')">Review all ranked findings</button></p></section></section>
 <section id="view-findings" class="view"><section class="card"><h2>Ranked findings</h2><p class="muted">The opening page contains the observed results prioritized by within-family effect rank and available statistical evidence. Additional highlights and every other candidate remain searchable here.</p><div class="filters"><input id="finding-search" placeholder="Search findings"><select id="finding-tier"></select><select id="finding-category"></select><select id="finding-system"></select></div><p id="finding-summary" class="muted"></p><div id="findings-list"></div></section><section class="card"><h2>Complete picker accounting</h2><p class="muted">Every completed module is listed, including QC, context, technical support, and reports that produced no automatic highlight.</p><div id="accounting-table" class="table-wrap"></div></section></section>
 <section id="view-states" class="view"><section class="card"><h2>Molecular states & generated figures</h2><p class="muted">Free-energy surfaces appear first, followed by one primary clustering partition per comparable view. Expand alternatives to inspect every method, its populations, and representative structures.</p><div class="visual-controls"><select id="visual-kind"></select></div></section><div id="visual-list"></div><h2>State populations and comparison figures</h2><div id="figure-list" class="grid"></div></section>

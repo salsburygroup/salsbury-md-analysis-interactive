@@ -1,5 +1,8 @@
 # Build and browse the NEMO results on a workstation
 
+This tutorial continues the core repository's
+[NEMO workstation tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_workstation/README.md).
+
 The commands below use both current `main` branches and record their exact
 commits. To run the same example through Slurm, use the core repository's
 [generic cluster tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_cluster/README.md)

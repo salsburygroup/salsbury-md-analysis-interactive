@@ -124,6 +124,13 @@ See [the detailed viewer guide](docs/INTERACTIVE_REPORT.md) and
 [the NEMO zinc-finger walkthrough](tutorials/nemo_zinc_finger/README.md). See
 [dependency and license information](DEPENDENCIES_AND_LICENSES.md).
 
+Salsbury-group users who want both current `main` branches on WFU DEAC should
+use the core repository's
+[DEAC NEMO walkthrough](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_deac/README.md).
+It preserves the pinned-release route above while showing how to bind a copied
+DEAC Slurm profile to a new environment and build this viewer after the core
+campaign completes.
+
 ## License
 
 The software is released under the BSD 3-Clause License. See [LICENSE](LICENSE).

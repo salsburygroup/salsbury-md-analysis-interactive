@@ -1,8 +1,10 @@
-# Browse the NEMO zinc-finger tutorial results
+# Build and browse the NEMO results on a workstation
 
-The commands below retain the reviewed release tags. To run both current
-`main` branches through Slurm on WFU DEAC, use the core repository's
-[DEAC NEMO walkthrough](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_deac/README.md).
+The commands below use both current `main` branches and record their exact
+commits. To run the same example through Slurm, use the core repository's
+[generic cluster tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_cluster/README.md)
+or the separate
+[WFU DEAC tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_deac/README.md).
 
 To add coordinate-derived illustrations beside reader findings after the
 analysis, follow [Molecular panels](../../docs/MOLECULAR_PANELS.md). Use the
@@ -21,20 +23,24 @@ and one zinc ion. This small run checks the software and teaches the workflow;
 it cannot establish convergence, equilibrium populations, rare-state sampling,
 zinc affinity, or a biological mechanism.
 
-## 1. Get the teaching files
+## 1. Get both current main branches
 
-Clone or download the core repository, which contains the PDB, PSF, DCD,
-configuration, and provenance record used here:
+Create a workspace, clone both repositories, and save the exact revisions used:
 
 ```bash
-git clone --branch v0.1.2 --depth 1 \
-  https://github.com/salsburygroup/salsbury-md-analysis.git
-cd salsbury-md-analysis
+mkdir salsbury-md-analysis-workstation
+cd salsbury-md-analysis-workstation
+git clone --branch main --single-branch \
+  https://github.com/salsburygroup/salsbury-md-analysis.git core
+git clone --branch main --single-branch \
+  https://github.com/salsburygroup/salsbury-md-analysis-interactive.git interactive
+git -C core rev-parse HEAD | tee CORE_MAIN_COMMIT.txt
+git -C interactive rev-parse HEAD | tee INTERACTIVE_MAIN_COMMIT.txt
+cd core
 ```
 
-You need the core source checkout for these teaching files. People analyzing
-their own trajectories can install both commands from GitHub without cloning
-either repository.
+The core checkout supplies the teaching files. Do not update either checkout
+inside a prepared campaign; start a new recorded run when changing revisions.
 
 ## 2. Create the full tutorial environment
 
@@ -45,8 +51,7 @@ The full Conda environment includes NumPy, SciPy, scikit-learn, HDBSCAN, and
 micromamba create --prefix ./.venv --file environment.yml \
   --override-channels --channel conda-forge --strict-channel-priority
 ./.venv/bin/python -m pip install --no-build-isolation -e .
-./.venv/bin/python -m pip install \
-  "salsbury-md-analysis-interactive @ git+https://github.com/salsburygroup/salsbury-md-analysis-interactive.git@v0.1.3"
+./.venv/bin/python -m pip install --no-build-isolation -e ../interactive
 ```
 
 Check that the environment is consistent and the secondary-structure executable is available:
@@ -68,12 +73,12 @@ Run this command from the core repository root:
 
 ```bash
 ./.venv/bin/salsbury-md-analysis prepare-analysis \
-  --pdb tutorials/nemo_zinc_finger/data/nemo_zinc_finger.pdb \
-  --psf tutorials/nemo_zinc_finger/data/nemo_zinc_finger.psf \
-  --trajectory tutorials/nemo_zinc_finger/data/nemo_zinc_finger_1000_frames.dcd \
+  --pdb tutorials/nemo_zinc_finger_workstation/data/nemo_zinc_finger.pdb \
+  --psf tutorials/nemo_zinc_finger_workstation/data/nemo_zinc_finger.psf \
+  --trajectory tutorials/nemo_zinc_finger_workstation/data/nemo_zinc_finger_1000_frames.dcd \
   --frame-interval-ps 0.2 \
   --project-id nemo-zinc-finger-interactive-tutorial \
-  --config tutorials/nemo_zinc_finger/analysis-config.json \
+  --config tutorials/nemo_zinc_finger_workstation/analysis-config.json \
   --output nemo-zinc-finger-interactive-tutorial-run
 ```
 
@@ -174,6 +179,6 @@ This changes only the browser. The scientific outputs remain unchanged.
 
 The repaired picker may show fewer than ten headlines when fewer candidates
 qualify. Check each finding's effect and supporting figure; headline placement
-does not establish physical importance. PCA now has variance plots, tICA has
-labeled timescales, and ESS has its own panel. The release tags in this tutorial
-remain fixed; use the reviewed repair checkout to test unreleased changes.
+does not establish physical importance. PCA has variance plots, tICA has
+labeled timescales, and ESS has its own panel. Keep the two recorded commit
+files with the report so the current-main run remains reproducible.

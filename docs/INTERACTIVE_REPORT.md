@@ -122,8 +122,8 @@ fails closed instead of being overwritten.
 
 The companion accepts an analysis root, not a PDB, PSF, PRMTOP, trajectory, or
 analysis config. Follow the
-[NEMO zinc-finger walkthrough](../tutorials/nemo_zinc_finger/README.md) for the
-complete sequence from simulation files to an interactive report.
+[NEMO workstation walkthrough](../tutorials/nemo_zinc_finger_workstation/README.md)
+for the complete sequence from simulation files to an interactive report.
 
 ## Scientific review
 

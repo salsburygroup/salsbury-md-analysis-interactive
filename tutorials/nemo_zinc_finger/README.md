@@ -1,5 +1,9 @@
 # Browse the NEMO zinc-finger tutorial results
 
+The commands below retain the reviewed release tags. To run both current
+`main` branches through Slurm on WFU DEAC, use the core repository's
+[DEAC NEMO walkthrough](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_deac/README.md).
+
 To add coordinate-derived illustrations beside reader findings after the
 analysis, follow [Molecular panels](../../docs/MOLECULAR_PANELS.md). Use the
 saved NEMO state assignments to select frames, retain their source identities,

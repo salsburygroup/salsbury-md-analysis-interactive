@@ -120,15 +120,13 @@ with the replica time series in the same analysis tab. State representatives
 contain the complete non-solvent molecular system and, when the state-ion
 calculation is available, only ions retained as stable within that state.
 
-See [the detailed viewer guide](docs/INTERACTIVE_REPORT.md) and
-[the NEMO workstation walkthrough](tutorials/nemo_zinc_finger_workstation/README.md). See
+See the [interactive tutorials and how-to guides](tutorials/README.md), the
+[detailed viewer guide](docs/INTERACTIVE_REPORT.md), and
 [dependency and license information](DEPENDENCIES_AND_LICENSES.md).
 
-Salsbury-group users who want both current `main` branches on WFU DEAC should
-use the core repository's
-[DEAC NEMO walkthrough](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_deac/README.md).
-Other Slurm users can start with the core repository's
-[generic cluster NEMO tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_cluster/README.md).
+The interactive index has matching paths for a workstation, a generic Slurm
+cluster, and WFU DEAC. Each page links to the core analysis instructions it
+continues.
 
 ## License
 

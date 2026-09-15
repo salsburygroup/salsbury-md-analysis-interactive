@@ -121,9 +121,8 @@ HTML hash, and every packaged evidence hash must validate before reuse. A partia
 fails closed instead of being overwritten.
 
 The companion accepts an analysis root, not a PDB, PSF, PRMTOP, trajectory, or
-analysis config. Follow the
-[NEMO workstation walkthrough](../tutorials/nemo_zinc_finger_workstation/README.md)
-for the complete sequence from simulation files to an interactive report.
+analysis config. Choose a matching workstation, generic Slurm, or WFU DEAC path
+from the [interactive tutorial index](../tutorials/README.md).
 
 ## Scientific review
 

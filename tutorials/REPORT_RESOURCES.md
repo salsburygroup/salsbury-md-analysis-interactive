@@ -7,9 +7,12 @@ assets, and build options, not just the raw trajectory's frame count.
 
 The core campaign's CPU, memory, and time ceilings do not cover this separate
 build. Core final reporting and the companion HTML build are different stages.
-There is currently no calibrated viewer resource recommendation. Do not reuse
-the core finalizer's one-CPU, 2-GiB, 30-minute defaults as a viewer estimate, or
-assume that reading reports makes a build safe on a login node.
+There is currently no calibrated viewer resource recommendation. The core now
+budgets its own preflight and final reporting using workload-based estimates;
+those estimates do not cover this separate HTML build. Do not reuse a core
+finalizer request as a viewer estimate or assume that reading reports makes
+a build safe on a login node. See the
+[core overhead model](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/docs/ORCHESTRATION_RESOURCE_ESTIMATES.md).
 
 For an unmeasured cluster build, obtain an approved compute allocation or copy
 the accepted campaign and its linked evidence to a suitable workstation. Use

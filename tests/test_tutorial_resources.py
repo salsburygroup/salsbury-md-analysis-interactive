@@ -27,7 +27,8 @@ class TutorialResourceTests(unittest.TestCase):
             self.assertIn("salsbury-md-analysis/blob/main/tutorials/RESOURCE_PLANNING.md", text)
         guide = (ROOT / "tutorials/REPORT_RESOURCES.md").read_text()
         self.assertIn("no calibrated viewer resource recommendation", guide)
-        self.assertIn("one-CPU, 2-GiB, 30-minute", guide)
+        self.assertIn("workload-based estimates", guide)
+        self.assertIn("ORCHESTRATION_RESOURCE_ESTIMATES.md", guide)
 
     def test_nemo_cluster_paths_follow_successful_attempt(self):
         for page in ("nemo_zinc_finger_deac", "nemo_zinc_finger_cluster"):

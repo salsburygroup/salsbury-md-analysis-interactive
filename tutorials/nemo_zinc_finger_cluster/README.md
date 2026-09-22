@@ -1,13 +1,22 @@
 # Build and review the NEMO report from a Slurm cluster
 
+Read [Report resource limits](../REPORT_RESOURCES.md) before building the
+browser. Core budget and recovery guidance is in
+[Resource settings and planning limits](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/RESOURCE_PLANNING.md).
+
 This tutorial continues the core repository's
 [NEMO generic Slurm tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_cluster/README.md).
 Complete that tutorial through the final `status` check before continuing here.
 The core tutorial installs both current `main` checkouts in one recorded
-environment and defines `CLUSTER_WORK`, `NEMO_STUDY`, and `CORE_CMD`.
+environment and defines `CLUSTER_WORK`, `NEMO_STUDY`, `NEMO_ANALYSIS`, and `CORE_CMD`.
 
 The viewer reads accepted reports. It does not inspect the raw trajectory,
 rerun an analysis, or submit a Slurm job.
+
+Keep `NEMO_ANALYSIS` set to the successful core attempt, including
+`analysis-replanned` if you used budget recovery. In a new shell, restore all
+four variables with the recorded paths before continuing. Do not reset the
+analysis path to the failed original attempt.
 
 ## 1. Confirm that the core campaign completed
 
@@ -16,8 +25,9 @@ core status again:
 
 ```bash
 source "$CLUSTER_WORK/.venv/bin/activate"
-"$CORE_CMD" status "$NEMO_STUDY/analysis"
-"$CORE_CMD" status "$NEMO_STUDY/analysis" --json
+: "${NEMO_ANALYSIS:?Set the successful prepared analysis path}"
+"$CORE_CMD" status "$NEMO_ANALYSIS"
+"$CORE_CMD" status "$NEMO_ANALYSIS" --json
 ```
 
 Do not build the browser while tasks remain queued or running. Resolve failed,
@@ -25,15 +35,18 @@ missing, or hash-invalid reports through the core recovery workflow first.
 
 ## 2. Build the offline browser
 
+Use an approved compute allocation or a suitable workstation. Login-node use
+requires site permission for the measured workload.
+
 ```bash
 "$CLUSTER_WORK/.venv/bin/salsbury-md-analysis-interactive" \
-  "$NEMO_STUDY/analysis"
+  "$NEMO_ANALYSIS"
 ```
 
 The command writes:
 
 ```text
-nemo-zinc-finger-cluster/analysis/interactive-report/
+$NEMO_ANALYSIS/interactive-report/
 ```
 
 The directory contains `index.html`, a manifest, and the evidence files used by
@@ -46,7 +59,7 @@ fails closed instead of being overwritten.
 Make one archive on shared storage:
 
 ```bash
-tar -C "$NEMO_STUDY/analysis" -czf \
+tar -C "$NEMO_ANALYSIS" -czf \
   "$NEMO_STUDY/nemo-interactive-report.tar.gz" \
   interactive-report
 ```

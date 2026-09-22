@@ -1,20 +1,30 @@
 # Build and download the NEMO report from WFU DEAC
 
+Read [Report resource limits](../REPORT_RESOURCES.md) before building the
+browser. Core budget and recovery guidance is in
+[Resource settings and planning limits](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/RESOURCE_PLANNING.md).
+
 This tutorial continues the core repository's
 [NEMO DEAC tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_deac/README.md).
 Complete its Slurm run and final `status` check first. That tutorial installs
 both current `main` checkouts in one DEAC environment and defines `DEAC_WORK`,
-`NEMO_STUDY`, and `CORE_CMD`.
+`NEMO_STUDY`, `NEMO_ANALYSIS`, and `CORE_CMD`.
 
 Building the browser reads completed reports on group storage. It does not read
 the raw trajectory again or submit a DEAC job.
+
+Keep `NEMO_ANALYSIS` set to the successful core attempt, including
+`analysis-replanned` if you used budget recovery. In a new shell, restore all
+four variables with the recorded paths before continuing. Do not reset the
+analysis path to the failed original attempt.
 
 ## 1. Confirm completion on DEAC
 
 ```bash
 source "$DEAC_WORK/.venv/bin/activate"
-"$CORE_CMD" status "$NEMO_STUDY/analysis"
-"$CORE_CMD" status "$NEMO_STUDY/analysis" --json
+: "${NEMO_ANALYSIS:?Set the successful prepared analysis path}"
+"$CORE_CMD" status "$NEMO_ANALYSIS"
+"$CORE_CMD" status "$NEMO_ANALYSIS" --json
 ```
 
 Wait until every scheduled task is complete. Use the core recovery workflow for
@@ -22,17 +32,19 @@ failed, missing, or hash-invalid reports before building the browser.
 
 ## 2. Build the offline browser
 
-Run the companion command on the DEAC login node:
+Run the companion command in an approved compute allocation or on a suitable
+workstation with the accepted campaign available. Use a login node only when
+site policy permits the measured workload:
 
 ```bash
 "$DEAC_WORK/.venv/bin/salsbury-md-analysis-interactive" \
-  "$NEMO_STUDY/analysis"
+  "$NEMO_ANALYSIS"
 ```
 
 The browser is written to:
 
 ```text
-nemo-zinc-finger-deac/analysis/interactive-report/
+$NEMO_ANALYSIS/interactive-report/
 ```
 
 That directory contains `index.html`, its manifest, and the packaged evidence.
@@ -44,7 +56,7 @@ HTML and evidence hashes validate. Partial or changed output is not overwritten.
 Create one archive:
 
 ```bash
-tar -C "$NEMO_STUDY/analysis" -czf \
+tar -C "$NEMO_ANALYSIS" -czf \
   "$NEMO_STUDY/nemo-interactive-report.tar.gz" \
   interactive-report
 ```

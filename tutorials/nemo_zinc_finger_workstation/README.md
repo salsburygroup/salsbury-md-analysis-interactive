@@ -1,5 +1,9 @@
 # Build and browse the NEMO results on a workstation
 
+Read [Report resource limits](../REPORT_RESOURCES.md) before building the
+browser. Core budget and recovery guidance is in
+[Resource settings and planning limits](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/RESOURCE_PLANNING.md).
+
 This tutorial continues the core repository's
 [NEMO workstation tutorial](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/nemo_zinc_finger_workstation/README.md).
 
@@ -62,6 +66,7 @@ Check that the environment is consistent and the secondary-structure executable 
 ```bash
 ./.venv/bin/python -m pip check
 ./.venv/bin/mkdssp --version
+export PATH="$PWD/.venv/bin:$PATH"
 ```
 
 People using their own trajectories can install both commands with the two
@@ -75,6 +80,8 @@ module as deferred and continues with the remaining applicable analyses.
 Run this command from the core repository root:
 
 ```bash
+export NEMO_ANALYSIS="$PWD/nemo-zinc-finger-interactive-tutorial-run"
+
 ./.venv/bin/salsbury-md-analysis prepare-analysis \
   --pdb tutorials/nemo_zinc_finger_workstation/data/nemo_zinc_finger.pdb \
   --psf tutorials/nemo_zinc_finger_workstation/data/nemo_zinc_finger.psf \
@@ -82,7 +89,8 @@ Run this command from the core repository root:
   --frame-interval-ps 0.2 \
   --project-id nemo-zinc-finger-interactive-tutorial \
   --config tutorials/nemo_zinc_finger_workstation/analysis-config.json \
-  --output nemo-zinc-finger-interactive-tutorial-run
+  --dssp-executable "$PWD/.venv/bin/mkdssp" \
+  --output "$NEMO_ANALYSIS"
 ```
 
 Preparation infers the protein-plus-zinc composition, chooses applicable
@@ -97,24 +105,22 @@ the local execution scripts. Inspect these files before launching the run:
 - `automatic-chemical-context.json` records the inferred protein and zinc
   selections.
 
-With `mkdssp` available, `secondary_structure` should appear as automatic in
-`module-coverage.json`. If it is deferred, confirm that the environment was
-active during preparation. You can also add this option to the preparation
-command before `--output`:
+The core tutorial config allows two CPUs, two elapsed hours, and 32 GiB
+aggregate memory, using built-in planner models. These are campaign ceilings,
+not measured requirements. Require successful preparation and a feasible plan.
+If time is insufficient, repeat preparation with the reviewed
+`--target-wall-hours` recommendation and a new `NEMO_ANALYSIS` directory;
+preserve the failed attempt. Keep that path for execution and report building.
 
-```bash
---dssp-executable "$PWD/.venv/bin/mkdssp"
-```
-
-Use a new output directory when you repeat preparation. The command never
-overwrites a nonempty run.
+The explicit `--dssp-executable` uses the full environment installed above.
+`secondary_structure` should appear as automatic in `module-coverage.json`.
+If using an intentionally DSSP-free environment, omit that option and verify
+that the deferred module is recorded. Do not claim full-module coverage then.
 
 ## 4. Run the analysis
 
 ```bash
-cd nemo-zinc-finger-interactive-tutorial-run
-./run-local.sh
-cd ..
+(cd "$NEMO_ANALYSIS" && ./run-local.sh)
 ```
 
 Wait for the local workflow to finish. Use the core workflow to launch or resume
@@ -126,13 +132,13 @@ and confirm that the expected module reports completed.
 
 ```bash
 ./.venv/bin/salsbury-md-analysis-interactive \
-  nemo-zinc-finger-interactive-tutorial-run
+  "$NEMO_ANALYSIS"
 ```
 
 Open this file in a current browser:
 
 ```text
-nemo-zinc-finger-interactive-tutorial-run/interactive-report/index.html
+$NEMO_ANALYSIS/interactive-report/index.html
 ```
 
 The report is self-contained. It does not need a web server, send results to an
@@ -173,7 +179,7 @@ or inline asset limits:
 
 ```bash
 ./.venv/bin/salsbury-md-analysis-interactive \
-  nemo-zinc-finger-interactive-tutorial-run \
+  "$NEMO_ANALYSIS" \
   --output-name interactive-report-compact \
   --maximum-inline-structures 10
 ```

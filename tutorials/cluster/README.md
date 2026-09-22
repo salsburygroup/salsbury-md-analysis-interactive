@@ -1,5 +1,9 @@
 # Build and transfer an interactive report from a Slurm cluster
 
+Read [Report resource limits](../REPORT_RESOURCES.md) before building the
+browser. Core budget and recovery guidance is in
+[Resource settings and planning limits](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/RESOURCE_PLANNING.md).
+
 This how-to guide continues the core repository's
 [Slurm cluster guide](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/cluster/README.md).
 It assumes that `/shared/path/my-study/analysis` is complete and that the
@@ -20,6 +24,9 @@ Do not build the browser while analysis tasks remain active. Resolve failed,
 missing, or hash-invalid reports through the core recovery workflow first.
 
 ## Build the report on shared storage
+
+Use an approved compute allocation or a suitable workstation. Login-node use
+requires site permission for the measured workload.
 
 ```bash
 salsbury-md-analysis-interactive /shared/path/my-study/analysis

@@ -1,5 +1,9 @@
 # Build an interactive report for your workstation campaign
 
+Read [Report resource limits](../REPORT_RESOURCES.md) before building the
+browser. Core budget and recovery guidance is in
+[Resource settings and planning limits](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/RESOURCE_PLANNING.md).
+
 This how-to guide continues the core repository's
 [workstation guide](https://github.com/salsburygroup/salsbury-md-analysis/blob/main/tutorials/workstation/README.md).
 It assumes that `my-study/analysis` is complete and that the compatible

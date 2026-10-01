@@ -1,5 +1,16 @@
 # Salsbury MD Analysis Interactive
 
+Reports with a hash-verified scientific summary open on that summary: the
+question, systems, quantitative findings, and supporting figures. Use the
+sidebar to inspect secondary findings, every candidate, all analysis classes,
+structures, QC, and resource accounting. The selective opening does not prune
+the supporting archive. Older reports without a reader summary retain the
+overview screen.
+
+The viewer imports only non-executable report markup and local evidence links.
+`finding_reader_review.md`, under QC and provenance, lists missing reporting
+context or structural evidence separately from the scientific narrative.
+
 `salsbury-md-analysis-interactive` is the optional results browser for
 [`salsbury-md-analysis`](https://github.com/salsburygroup/salsbury-md-analysis).
 It turns a completed analysis directory into a self-contained HTML report with
@@ -11,6 +22,10 @@ The analysis package and viewer have separate commands. Use
 finishes to browse its results.
 
 ## Install
+
+For coordinate-derived figures beside selected findings, see the optional
+[molecular-panel renderer](docs/MOLECULAR_PANELS.md). It renders specified PDBs
+and saves their source identities and an offline view; it does not rerun analyses.
 
 The unreleased 0.1.4rc1 candidate uses the core candidate's shared clustering
 selection. Install its wheel alongside main 0.1.3rc1 or experimental 0.2.0a3.
@@ -62,6 +77,13 @@ fails closed instead of being overwritten.
 
 ## What the report shows
 
+When the core run includes the figure-led findings summary, the opening page
+links to it. The viewer packages that summary, its secondary findings, complete
+artifact index, and full candidate CSV beside the figures, tables, and structures.
+These links work after downloading and extracting the interactive report.
+Summary formatting does not change the ranking or remove any candidate or
+analysis artifact. Older runs without this summary keep the existing dashboard.
+
 The browser opens with the picker’s prioritized findings. A finding links to
 its analysis tab and, when available, to a figure or representative structure.
 Free-energy surfaces come first in the molecular-states view. One primary
@@ -98,9 +120,13 @@ with the replica time series in the same analysis tab. State representatives
 contain the complete non-solvent molecular system and, when the state-ion
 calculation is available, only ions retained as stable within that state.
 
-See [the detailed viewer guide](docs/INTERACTIVE_REPORT.md) and
-[the NEMO zinc-finger walkthrough](tutorials/nemo_zinc_finger/README.md). See
+See the [interactive tutorials and how-to guides](tutorials/README.md), the
+[detailed viewer guide](docs/INTERACTIVE_REPORT.md), and
 [dependency and license information](DEPENDENCIES_AND_LICENSES.md).
+
+The interactive index has matching paths for a workstation, a generic Slurm
+cluster, and WFU DEAC. Each page links to the core analysis instructions it
+continues.
 
 ## License
 

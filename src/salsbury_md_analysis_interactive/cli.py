@@ -25,6 +25,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--maximum-inline-structures", type=int, default=100)
     parser.add_argument("--maximum-inline-structure-bytes", type=int, default=50_000_000)
     parser.add_argument("--maximum-inline-figure-bytes", type=int, default=25_000_000)
+    parser.add_argument("--maximum-html-bytes", type=int, default=100_000_000,
+                        help="HTML byte ceiling; large figures/tables remain linked offline")
     parser.add_argument("--version", action="version", version=__version__)
     return parser
 
@@ -42,9 +44,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             maximum_inline_structures=args.maximum_inline_structures,
             maximum_inline_structure_bytes=args.maximum_inline_structure_bytes,
             maximum_inline_figure_bytes=args.maximum_inline_figure_bytes,
+            maximum_html_bytes=args.maximum_html_bytes,
         )
     except (InteractiveReportError, OSError, ValueError) as exc:
         parser.exit(2, f"interactive report failed: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
-

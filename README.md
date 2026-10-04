@@ -71,9 +71,26 @@ Open `path/to/completed-analysis/interactive-report/index.html` in a current
 browser. The report does not need a web server or internet connection and does
 not send structures or results to an external service.
 
-Generation is immutable. If an interactive report already exists, its manifest
+Generation is immutable. If an interactive report already exists, its manifest,
 HTML checksum, and every packaged evidence hash must validate before reuse. Changed or partial output
 fails closed instead of being overwritten.
+
+Report previews have aggregate size limits; complete data remain in the linked
+evidence files. The default HTML ceiling is 100,000,000 bytes. If needed, the
+builder links figures and tables instead of duplicating them inside the HTML.
+It retains every candidate and packaged source. Set a different ceiling with
+`--maximum-html-bytes`; if the report still exceeds it, reduce inline structures
+or explicitly raise the ceiling. Use a new output name to apply changed settings
+to an existing immutable report.
+
+RMSF charts show numerical ticks and residue identities, with a shared scale
+across displayed systems and views. Missing composition descriptions are reported
+as missing context rather than inferred from names.
+
+Recovery assemblies with links outside the analysis directory need a separate
+physical, hash-verified presentation snapshot. The viewer does not treat such
+links as an authorized experimental extension or weaken its path checks. Building
+a viewer snapshot does not establish acceptance of a new analysis campaign.
 
 ## What the report shows
 
@@ -113,8 +130,9 @@ The report copies the JSON, CSV, PDB, and figure files needed by its links into 
 `evidence/` directory. The result remains portable when the whole
 `interactive-report/` directory is moved or zipped.
 
-With a current core report, every completed analysis has at least one labeled
-figure and a CSV table when tabular values are available. Findings open the
+With a current core report, completed analyses have labeled figures and CSV
+tables for their available quantities. Unavailable quantities retain their
+recorded reasons rather than substituted plots. Findings open the
 exact matching artifact. Radius of gyration opens a Scott-rule histogram first,
 with the replica time series in the same analysis tab. State representatives
 contain the complete non-solvent molecular system and, when the state-ion

@@ -359,7 +359,9 @@ def _relative(path: Path, root: Path) -> str:
         except (OSError, ValueError, KeyError, TypeError) as contract_error:
             raise InteractiveReportError(
                 f"interactive-report asset escapes the analysis root without valid "
-                f"extension provenance: {path}: {contract_error}"
+                f"extension provenance: {path}: {contract_error}. "
+                "Use a separate physical, hash-verified presentation snapshot for recovery; "
+                "do not bypass containment or fabricate an extension contract."
             ) from exc
 
 
@@ -403,8 +405,19 @@ def _json_safe(value: object) -> object:
     return value
 
 
-def _preview(value: object, *, depth: int = 0, maximum_items: int = 80) -> object:
-    """Return a deterministic bounded preview while leaving raw JSON linked."""
+def _preview(value: object, *, depth: int = 0, maximum_items: int = 80,
+             _budget=None) -> object:
+    """Bound the entire preview tree, not just each nested container."""
+    if _budget is None:
+        _budget = [4000, 64000]
+    _budget[0] -= 1
+    _budget[1] -= 64  # Container/scalar JSON punctuation and truncation metadata.
+    if _budget[0] < 0 or _budget[1] < 256:
+        return {"preview_truncated": True, "reason": "aggregate preview limit"}
+    if isinstance(value, str):
+        shown = value[:min(2000, max(0, (_budget[1] - 128) // 12))]
+        _budget[1] -= len(json.dumps(shown).encode("utf-8")) + 32
+        return shown if len(shown) == len(value) else shown + " [preview truncated]"
 
     if depth >= 6:
         if isinstance(value, (dict, list)):
@@ -415,29 +428,29 @@ def _preview(value: object, *, depth: int = 0, maximum_items: int = 80) -> objec
         for index, key in enumerate(sorted(value, key=str)):
             if str(key) in {"scientific_status", "evidence_level"}:
                 continue
-            if index >= maximum_items:
-                result["preview_truncated_keys"] = len(value) - maximum_items
+            if index >= maximum_items or _budget[0] <= 0 or _budget[1] < 256 or len(str(key)) > 2000:
+                result["preview_truncated_keys"] = len(value) - index
                 break
+            _budget[1] -= len(json.dumps(str(key)).encode("utf-8")) + 4
             result[str(key)] = _preview(
-                value[key], depth=depth + 1, maximum_items=maximum_items
+                value[key], depth=depth + 1, maximum_items=maximum_items, _budget=_budget
             )
         return result
     if isinstance(value, list):
-        if len(value) <= maximum_items:
-            return [
-                _preview(row, depth=depth + 1, maximum_items=maximum_items)
-                for row in value
-            ]
         step = max(1, math.ceil(len(value) / maximum_items))
-        sampled = value[::step][:maximum_items]
+        items = []
+        for index in range(0, len(value), step):
+            if len(items) >= maximum_items or _budget[0] <= 0 or _budget[1] < 256:
+                break
+            items.append(_preview(value[index], depth=depth + 1,
+                                  maximum_items=maximum_items, _budget=_budget))
+        if len(items) == len(value):
+            return items
         return {
             "preview_truncated": True,
             "source_item_count": len(value),
             "deterministic_preview_stride": step,
-            "items": [
-                _preview(row, depth=depth + 1, maximum_items=maximum_items)
-                for row in sampled
-            ],
+            "items": items,
         }
     return value
 
@@ -2174,7 +2187,18 @@ function renderClusters(v,host){
   host.innerHTML=svg+`<div class="chart-note"><strong>${esc(v.method_name)}</strong> · silhouette ${fmt(v.silhouette)} · ${sizes.length} clusters · ${total.toLocaleString()} assigned observations.</div>${table}<div class="structure-links">${representativeLinks(v)}</div>`;
   wireActions(host);drawStructurePreviews(host);
 }
-function renderRMSF(v,host){const rows=v.residues||[],w=900,h=360,p=50;if(!rows.length){host.innerHTML='<div class="empty">No RMSF rows.</div>';return}const max=Math.max(...rows.map(r=>r.mean_rmsf_angstrom),1e-9),step=Math.max(1,Math.ceil(rows.length/1000)),shown=rows.filter((_,i)=>i%step===0);const pts=shown.map((r,i)=>`${p+i*(w-2*p)/Math.max(1,shown.length-1)},${h-p-r.mean_rmsf_angstrom*(h-2*p)/max}`).join(' ');host.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Residue RMSF"><line x1="${p}" y1="${p}" x2="${p}" y2="${h-p}" stroke="#777"/><line x1="${p}" y1="${h-p}" x2="${w-p}" y2="${h-p}" stroke="#777"/><polyline points="${pts}" fill="none" stroke="#9d2235" stroke-width="2"/><text x="15" y="${h/2}" transform="rotate(-90 15 ${h/2})" font-size="12">RMSF (Å)</text><text x="${w/2}" y="${h-10}" text-anchor="middle" font-size="12">Residue order</text></svg><div class="chart-note">${esc(v.title)}; residue values are means over mapped atom RMSFs. Display stride ${step}.</div>`}
+function renderRMSF(v,host){
+ const rows=v.residues||[],w=900,h=420,p=65;if(!rows.length){host.innerHTML='<div class="empty">No RMSF rows.</div>';return}
+ const max=(DATA.reports||[]).flatMap(r=>r.visuals||[]).filter(a=>a.kind==='rmsf').reduce((m,a)=>(a.residues||[]).reduce((n,r)=>Math.max(n,r.mean_rmsf_angstrom||0),m),Math.max(1e-9,...rows.slice(0,1).map(r=>r.mean_rmsf_angstrom)));
+ const step=Math.max(1,Math.ceil(rows.length/1000)),shown=rows.map((r,i)=>({...r,ordinal:i})).filter((r,i)=>i%step===0||i===rows.length-1);
+ const x=i=>p+i*(w-2*p)/Math.max(1,rows.length-1),y=value=>h-p-value*(h-2*p)/max;
+ const name=r=>`${r.chain_id||'_'}:${r.residue_name}${r.residue_number}${r.insertion_code||''}`;
+ const pts=shown.map(r=>`${x(r.ordinal)},${y(r.mean_rmsf_angstrom)}`).join(' ');
+ const ticks=Array.from({length:5},(_,i)=>{const val=max*i/4;return `<line x1="${p}" y1="${y(val)}" x2="${w-p}" y2="${y(val)}" stroke="#ddd"/><text x="${p-8}" y="${y(val)+4}" text-anchor="end" font-size="12">${val.toFixed(2)}</text>`}).join('');
+ const indices=[...new Set(Array.from({length:5},(_,i)=>Math.round((rows.length-1)*i/4)))];
+ const labels=indices.map(i=>`<text x="${x(i)}" y="${h-p+20}" text-anchor="middle" font-size="11">${esc(name(rows[i]))}</text>`).join('');
+ host.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Residue RMSF with numerical axes">${ticks}<line x1="${p}" y1="${p}" x2="${p}" y2="${h-p}" stroke="#777"/><polyline points="${pts}" fill="none" stroke="#9d2235" stroke-width="2"/>${labels}<text x="15" y="${h/2}" transform="rotate(-90 15 ${h/2})" font-size="12">RMSF (Å)</text><text x="${w/2}" y="${h-10}" text-anchor="middle" font-size="12">Chain, residue identity (ordered by chain and number)</text></svg><div class="chart-note">${esc(v.title)}; means over mapped atom RMSFs. Shared RMSF scale across displayed systems and views. Display stride ${step}; complete values remain in the source table.</div>`
+}
 function renderDCCM(v,host){const m=v.matrix||[],n=m.length;if(!n){host.innerHTML='<div class="empty">No DCCM matrix.</div>';return}const c=document.createElement('canvas');c.width=Math.max(540,n*3+70);c.height=c.width;const x=c.getContext('2d'),pad=52,side=c.width-pad-18,cell=side/n;x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);m.forEach((row,i)=>row.forEach((z,j)=>{const q=Number.isFinite(z)?z:0;x.fillStyle=q<0?`rgb(${Math.round(255*(1+q))},${Math.round(255*(1+q))},255)`:`rgb(255,${Math.round(255*(1-q))},${Math.round(255*(1-q))})`;x.fillRect(pad+i*cell,pad+(n-1-j)*cell,cell+.5,cell+.5)}));x.strokeStyle='#26362f';x.strokeRect(pad,pad,side,side);x.fillStyle='#18211d';x.font='12px sans-serif';x.textAlign='center';x.fillText('Atom/residue index',pad+side/2,c.height-8);x.save();x.translate(14,pad+side/2);x.rotate(-Math.PI/2);x.fillText('Atom/residue index',0,0);x.restore();c.className='chart';host.appendChild(c);host.insertAdjacentHTML('beforeend',`<div class="chart-note">${esc(v.title)}; blue is anticorrelation and red is positive correlation. ${v.source_atom_count} source atoms; display stride ${v.display_stride}.</div>`)}
 function allVisuals(){return DATA.reports.flatMap(r=>(r.visuals||[]).map(v=>({...v,module_id:r.module_id,analysis_class_id:r.analysis_class_id,context:v.context||r.context})))}
 function drawVisualCard(v,host,rank=null){const card=document.createElement('section');card.className='card';const heading=rank?`${rank}. ${v.method_name||v.title}`:v.title;card.innerHTML=`<h3>${esc(cleanLabel(heading))}</h3><div class="chart"></div>`;host.appendChild(card);const target=$('.chart',card);target.className='';if(v.kind==='fes')renderFES(v,target);else if(v.kind==='cluster_populations')renderClusters(v,target);else if(v.kind==='rmsf')renderRMSF(v,target);else if(v.kind==='dccm')renderDCCM(v,target)}
@@ -2215,7 +2239,7 @@ def _render_html(data: Mapping[str, object]) -> str:
         ) from exc
     threedmol_javascript = threedmol_javascript.replace("</script", "<\\/script")
     encoded = json.dumps(
-        _json_safe(data),
+        _json_safe({**data, "reader_report_html": bool(data.get("reader_report_html"))}),
         sort_keys=True,
         separators=(",", ":"),
         allow_nan=False,
@@ -2321,6 +2345,7 @@ def build_interactive_report(
     maximum_inline_structures: int = 100,
     maximum_inline_structure_bytes: int = 50_000_000,
     maximum_inline_figure_bytes: int = 25_000_000,
+    maximum_html_bytes: int = 100_000_000,
 ) -> Dict[str, object]:
     """Build an immutable, offline interactive result under an analysis root."""
 
@@ -2336,6 +2361,7 @@ def build_interactive_report(
         ("maximum_inline_structures", maximum_inline_structures),
         ("maximum_inline_structure_bytes", maximum_inline_structure_bytes),
         ("maximum_inline_figure_bytes", maximum_inline_figure_bytes),
+        ("maximum_html_bytes", maximum_html_bytes),
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise InteractiveReportError(f"{label} must be a nonnegative integer")
@@ -2358,6 +2384,28 @@ def build_interactive_report(
             analysis_root, temporary, data
         )
         html_text = _render_html(data)
+        reduced_embeddings = False
+        if len(html_text.encode("utf-8")) > maximum_html_bytes:
+            # Keep every candidate and portable source. Only redundant inline
+            # asset bytes/previews are removed; hrefs remain usable offline.
+            def link_assets(value):
+                if isinstance(value, list):
+                    for item in value:
+                        link_assets(item)
+                elif isinstance(value, dict):
+                    if value.get("href"):
+                        value.pop("data_uri", None)
+                        value.pop("table_preview", None)
+                    for item in value.values():
+                        if isinstance(item, (dict, list)):
+                            link_assets(item)
+            link_assets(data)
+            reduced_embeddings = True
+            html_text = _render_html(data)
+        if len(html_text.encode("utf-8")) > maximum_html_bytes:
+            raise InteractiveReportError(
+                "interactive HTML exceeds maximum_html_bytes after linking figures/tables; "
+                "reduce inline structures or raise the explicit HTML limit; all source evidence is unchanged")
         index_path = temporary / "index.html"
         index_path.write_text(html_text, encoding="utf-8")
         manifest = {
@@ -2370,6 +2418,8 @@ def build_interactive_report(
             "index_path": f"{output_name}/index.html",
             "index_sha256": _sha256_file(index_path),
             "index_size_bytes": index_path.stat().st_size,
+            "maximum_html_bytes": maximum_html_bytes,
+            "linked_assets_to_meet_html_limit": reduced_embeddings,
             "module_report_count": len(data["reports"]),
             "finding_count": len(data["highlighted_findings"]),
             "headline_finding_count": len(data["headline_findings"]),

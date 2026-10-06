@@ -2,6 +2,12 @@
 
 ## 0.1.4rc1 - unreleased
 
+- Keep filtered findings hidden despite the grid layout.
+- Link representatives beyond the inline limit to their exported PDB files;
+  keep in-viewer controls for embedded structures.
+- Keep hash navigation from resetting same-view figure/table jumps.
+- Recognize nucleic-acid display aliases and show unrecognized ATOM residues
+  with bonds. Preserve source names in hover labels and all exported PDB bytes.
 - Use the core picker's primary clustering partition for each comparable view.
 - Keep alternatives and their artifacts behind expandable sections.
 - Keep FES separate; do not promote fit scores into physical headlines.

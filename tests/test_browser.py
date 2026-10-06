@@ -1,4 +1,5 @@
 """Opt-in installed-package browser smoke test; no network or scientific execution."""
+import hashlib
 import json
 import os
 import tempfile
@@ -18,6 +19,20 @@ class BrowserTests(unittest.TestCase):
             fixture = test_report.InteractiveReportTests()
             root = fixture._root(temporary)
             fixture._add_presentation_artifacts(root)
+            # The shared fixture has figures/tables but no declared structure
+            # artifact. Declare one so this test exercises an omitted action.
+            target = root / 'presentation-artifacts/representative.pdb'
+            target.write_bytes(next((root / 'results').rglob('representative-1.pdb')).read_bytes())
+            manifest_path = root / 'presentation-artifacts/presentation-manifest.json'
+            manifest = json.loads(manifest_path.read_text())
+            artifact = dict(manifest['artifacts'][0], artifact_id='structure-browser-test',
+                            artifact_type='structure', purpose='representative_structure',
+                            title='Basin representative', relative_path='representative.pdb',
+                            media_type='chemical/x-pdb', artifact_size_bytes=target.stat().st_size,
+                            artifact_sha256=hashlib.sha256(target.read_bytes()).hexdigest())
+            manifest['artifacts'].append(artifact)
+            manifest['artifact_count'] = len(manifest['artifacts'])
+            manifest_path.write_text(json.dumps(manifest))
             build_interactive_report(root, maximum_inline_structures=0)
             with sync_playwright() as pw:
                 launch = {"headless": True}
@@ -51,7 +66,7 @@ class BrowserTests(unittest.TestCase):
                             self.assertEqual(row['height'] == 0, row['hidden'])
                     selector.select_option('')
                 self.assertEqual(page.locator('#findings-list .finding:visible').count(), count)
-                page.evaluate("go('states')")
+                page.evaluate("go('analysis-free-energy')")
                 self.assertEqual(page.locator('[data-structure-id]').count(), 0)
                 links = page.get_by_role('link', name='Open representative PDB (not embedded)')
                 self.assertGreater(links.count(), 0)

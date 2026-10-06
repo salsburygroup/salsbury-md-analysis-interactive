@@ -109,6 +109,7 @@ class BrowserTests(unittest.TestCase):
                 self.assertIn("Basin", page.locator("#findings-list").inner_text())
                 page.locator('#findings-list [data-artifact-id="figure-pca-primary"]').first.click()
                 self.assertTrue(page.locator("#artifact-figure-pca-primary").is_visible())
+                page.wait_for_function("()=>{const r=document.getElementById('artifact-figure-pca-primary').getBoundingClientRect();return r.top>=-1&&r.top<innerHeight}")
                 page.locator('button[data-view="molecules"]').click()
                 self.assertTrue(page.locator("#molecule-viewer canvas").count())
                 for href in page.locator("a[href]").evaluate_all("els=>els.map(e=>e.href)"):

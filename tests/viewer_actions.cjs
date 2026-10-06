@@ -34,6 +34,28 @@ for(const selection of input.selections){
 assert.equal(controls['findings-list'].rows.length,data.findings.length);
 context.calls=[];
 vm.runInContext("go=(view)=>calls.push(['go',view]);loadStructure=(index)=>calls.push(['load',index]);",context);
+document.body={dataset:{view:'analysis-free-energy'}};
+context.location={hash:'#analysis-free-energy'};
+vm.runInContext('routeHash()',context);
+assert.equal(context.calls.length,0,'hashchange must not reset a same-view artifact jump');
+context.location.hash='#findings';
+vm.runInContext('routeHash()',context);
+assert.equal(context.calls.at(-1)[1],'findings','back/forward navigation still changes view');
+context.displayAtoms=[{resn:'GUA',serial:1,x:1,y:2,z:3},{resn:'EDU',serial:2},
+  {resn:'ALA',serial:3},{resn:'K',serial:4,hetflag:true}];
+vm.runInContext('prepareDisplayAtoms({selectedAtoms:()=>displayAtoms})',context);
+assert.equal(context.displayAtoms[0].resn,'G');
+assert.equal(context.displayAtoms[0].sourceResn,'GUA');
+assert.equal(context.displayAtoms[0].x,1);
+assert.equal(context.displayAtoms[1].resn,'EDU','do not invent a modified-residue alias');
+vm.runInContext('prepareDisplayAtoms({selectedAtoms:()=>displayAtoms})',context);
+assert.equal(context.displayAtoms[0].sourceResn,'GUA','display normalization is idempotent');
+context.styleCalls=[];
+vm.runInContext("molecular.model={selectedAtoms:()=>displayAtoms};molecular.viewer={setStyle:(selection,style)=>styleCalls.push({selection,style}),selectedAtoms:()=>displayAtoms,render:()=>{},zoomTo:()=>{}};$('#viewer-representation').value='overview';$('#viewer-color').value='chain';$('#viewer-search').value='';applyMolecularStyle();",context);
+const fallback=context.styleCalls.find(c=>Array.isArray(c.selection.serial));
+assert.deepEqual(Array.from(fallback.selection.serial),[2,4],'modified ATOM residues and hetero atoms get bonded fallback');
+assert.ok(fallback.style.stick);
+vm.runInContext('molecular.viewer=null;molecular.model=null',context);
 const actions=[];
 for(const artifact of data.presentation_artifacts.filter(a=>a.artifact_type==='structure')){
   context.artifact=artifact;
